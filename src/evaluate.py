@@ -27,6 +27,12 @@ from sklearn.metrics import (
 )
 
 
+# Assumed cost of flagging a legit purchase (support call, blocked card, annoyed
+# customer). It is a business assumption, not something learned from data;
+# notebooks/04_threshold.ipynb shows how the chosen threshold moves with it.
+FALSE_ALARM_COST = 10
+
+
 def evaluate(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> dict:
     """Compute every metric from the predicted fraud probabilities.
 
@@ -75,3 +81,41 @@ def plot_pr_curves(y_true: np.ndarray, probs: dict[str, np.ndarray], ax=None):
     ax.set_title("Precision-recall curve (cv set)")
     ax.legend()
     return ax
+
+
+def cost_by_threshold(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    amounts: np.ndarray,
+    false_alarm_cost: float,
+    thresholds: np.ndarray | None = None,
+) -> pd.DataFrame:
+    """Total cost of acting on the model's decisions, for each threshold.
+
+    Cost model:
+    - a missed fraud costs its purchase amount, since the bank refunds the customer;
+    - a false alarm costs a fixed `false_alarm_cost` (support call, blocked card,
+      annoyed customer);
+    - correct decisions cost nothing.
+
+    Pricing missed frauds by their amount means letting a $20 fraud through is
+    much cheaper than letting a $900 one through, which is how a bank sees it.
+    """
+    if thresholds is None:
+        thresholds = np.round(np.arange(0.01, 1.0, 0.01), 2)
+    rows = []
+    for t in thresholds:
+        flagged = y_prob >= t
+        missed = (y_true == 1) & ~flagged
+        false_alarms = (y_true == 0) & flagged
+        missed_cost = amounts[missed].sum()
+        false_alarm_total = false_alarm_cost * false_alarms.sum()
+        rows.append({
+            "threshold": t,
+            "missed_frauds": int(missed.sum()),
+            "false_alarms": int(false_alarms.sum()),
+            "missed_fraud_cost": missed_cost,
+            "false_alarm_cost": false_alarm_total,
+            "total_cost": missed_cost + false_alarm_total,
+        })
+    return pd.DataFrame(rows).set_index("threshold")

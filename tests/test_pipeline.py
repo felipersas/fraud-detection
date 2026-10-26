@@ -6,7 +6,7 @@ import pytest
 
 from src.data import TARGET, TIME, split_by_time
 from src.error_analysis import count_tags, recent_card_activity
-from src.evaluate import evaluate
+from src.evaluate import cost_by_threshold, evaluate
 from src.features import NUMERIC, Preprocessor, haversine_km, make_features
 
 
@@ -97,3 +97,14 @@ def test_count_tags_allows_overlapping_tags():
     table = count_tags(sample, {"small": sample["amt"] < 100, "any": sample["amt"] > 0})
     assert table.loc["any", "errors"] == 3
     assert table.loc["small", "share_%"] == pytest.approx(66.7)
+
+
+def test_cost_by_threshold_prices_each_error_type():
+    y = np.array([1, 1, 0, 0])
+    prob = np.array([0.9, 0.2, 0.6, 0.1])
+    amounts = np.array([500.0, 30.0, 80.0, 20.0])
+    costs = cost_by_threshold(y, prob, amounts, false_alarm_cost=10, thresholds=np.array([0.5]))
+    # At 0.5: the $30 fraud is missed and the $80 legit purchase is flagged.
+    row = costs.loc[0.5]
+    assert row["missed_frauds"] == 1 and row["false_alarms"] == 1
+    assert row["total_cost"] == pytest.approx(30 + 10)

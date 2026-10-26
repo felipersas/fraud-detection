@@ -35,6 +35,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 4. **Neural network** in Keras: two small ReLU layers, a sigmoid output, binary cross-entropy and L2 regularization.
 5. **Hyperparameter search on cv.** The fraud class weight (five values) and the training setup (learning rate and early stopping), each with three seeds, so real effects can be told apart from run-to-run noise.
 6. **Diagnosis and error analysis.** Learning curves (J_train vs J_cv), then a sample of 100 missed frauds and 100 false alarms, tagged and counted as taught in the course. The strategies are written up in [docs/error-analysis.md](docs/error-analysis.md).
+7. **Decision threshold by cost.** A missed fraud costs its purchase amount and a false alarm a fixed $10; the threshold is the one with the lowest total cost on cv.
 
 ## Results (cv set)
 
@@ -82,6 +83,21 @@ At the 0.5 threshold the network misses 363 of 2,286 frauds and flags 754 legit 
 
 Both point to the same next step: features describing each card's recent activity, computed only from its earlier purchases.
 
+### Decision threshold
+
+A missed fraud costs the bank its purchase amount (the customer is refunded), and a false alarm is assumed to cost $10 (support call, blocked card, annoyed customer). Trying every threshold on cv:
+
+| | Threshold 0.5 | Threshold 0.23 (cheapest) |
+|---|---:|---:|
+| Missed frauds | 363 | 204 |
+| Amount lost to missed frauds | $54,419 | $17,942 |
+| False alarms | 754 | 2,722 |
+| **Total cost** | **$61,959** | **$45,162** |
+
+The cost-based threshold is 27% cheaper than the default, and the model avoids 96% of the $1.22 million that frauds would cost with no model. The choice depends on the assumed false alarm cost: the threshold stays at 0.23 for $5 to $10, and moves to 0.53 at $50.
+
+![Cost of each threshold](reports/figures/threshold_cost.png)
+
 ## Project structure
 
 ```
@@ -97,7 +113,8 @@ fraud-detection/
 ├── notebooks/
 │   ├── 01_eda.ipynb
 │   ├── 02_baselines.ipynb
-│   └── 03_neural_network.ipynb
+│   ├── 03_neural_network.ipynb
+│   └── 04_threshold.ipynb
 ├── docs/
 │   └── error-analysis.md     # error analysis strategies and how they were applied
 ├── reports/
@@ -134,9 +151,8 @@ uv pip install --python .venv/bin/python -r requirements.txt
 ## Next steps
 
 1. Card-history features: purchases, night purchases and large purchases on the same card in the last 24 hours.
-2. A decision threshold chosen by cost on cv (a missed fraud costs far more than a false alarm).
-3. A single final evaluation on the test set.
-4. A FastAPI endpoint and a Streamlit demo.
+2. A single final evaluation on the test set.
+3. A FastAPI service that serves the model, with Docker and CI.
 
 ## Credits
 

@@ -15,6 +15,16 @@ from src.evaluate import confusion, evaluate, results_table
 from src.features import Preprocessor
 
 
+# Final training setup, chosen on cv by src/tune_fraud_weight.py and src/tune_training.py.
+FINAL_PARAMS = {
+    "fraud_weight": 10,
+    "learning_rate": 1e-3,
+    "max_epochs": 300,
+    "patience": 10,
+    "seed": 0,
+}
+
+
 def train_lazy(X: np.ndarray, y: np.ndarray) -> DummyClassifier:
     """Lazy baseline that always predicts the majority class ("not fraud").
 
