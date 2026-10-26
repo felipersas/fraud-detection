@@ -1,0 +1,7 @@
+features,seed,pr_auc,epochs_run,threshold,missed_frauds,false_alarms,total_cost
+transaction only,0,0.8755304020407387,300,0.23,204,2722,45161.56
+transaction only,1,0.8568236773893673,74,0.41,265,2720,41062.11
+transaction only,2,0.8326110897452359,185,0.46,222,3031,46708.32
+transaction + card history,0,0.973465387893788,298,0.35,56,752,21916.57
+transaction + card history,1,0.9699137085285916,300,0.34,41,1177,18388.670000000002
+transaction + card history,2,0.9532886814393364,173,0.61,67,1039,24647.83
