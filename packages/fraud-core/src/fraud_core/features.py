@@ -15,6 +15,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from fraud_core.columns import TARGET, TIME
 
+# Raw columns that make_features reads; anything scoring a transaction must provide them.
+RAW_INPUTS = [TIME, "amt", "dob", "city_pop", "lat", "long", "merch_lat", "merch_long", "category", "gender"]
+
 NUMERIC = ["log_amt", "hour", "day_of_week", "age", "log_city_pop", "distance_km"]
 CATEGORICAL = ["category", "gender"]
 
@@ -78,9 +81,11 @@ class Preprocessor:
 
     def transform(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         """Return (X, y) ready for a model, using what was learned in fit."""
-        X = self.columns.transform(make_features(df))
-        y = df[TARGET].to_numpy()
-        return X, y
+        return self.transform_features(df), df[TARGET].to_numpy()
+
+    def transform_features(self, df: pd.DataFrame) -> np.ndarray:
+        """Return only X, for transactions whose label is unknown (as in serving)."""
+        return self.columns.transform(make_features(df))
 
     @property
     def feature_names(self) -> list[str]:

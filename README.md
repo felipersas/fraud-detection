@@ -36,6 +36,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 5. **Hyperparameter search on cv.** The fraud class weight (five values) and the training setup (learning rate and early stopping), each with three seeds, so real effects can be told apart from run-to-run noise.
 6. **Diagnosis and error analysis.** Learning curves (J_train vs J_cv), then a sample of 100 missed frauds and 100 false alarms, tagged and counted as taught in the course. The strategies are written up in [docs/error-analysis.md](docs/error-analysis.md).
 7. **Decision threshold by cost.** A missed fraud costs its purchase amount and a false alarm a fixed $10; the threshold is the one with the lowest total cost on cv.
+8. **Versioned model bundle.** `fraud-train` retrains the final network, picks the threshold and exports a small, self-describing bundle that the API can load without TensorFlow.
 
 ## Results (cv set)
 
@@ -98,6 +99,18 @@ The cost-based threshold is 27% cheaper than the default, and the model avoids 9
 
 ![Cost of each threshold](training/reports/figures/threshold_cost.png)
 
+## The model bundle
+
+`uv run fraud-train --version 1.0.0` (from `training/`) retrains the final network and writes `models/1.0.0/`:
+
+| File | Contents |
+|---|---|
+| `weights.npz` | weights and bias of each Dense layer, and each layer's activation |
+| `preprocessor.joblib` | the feature pipeline fitted on the training set |
+| `metadata.json` | version, git commit, training and cv periods, training setup, threshold, cost model and cv metrics |
+
+A trained Dense network only computes `activation(X @ W + b)` layer after layer, so `fraud_core.model` runs it with NumPy. Serving needs neither TensorFlow nor a GPU, and the whole bundle is 12 KB. Before publishing, `fraud-train` reloads the bundle exactly as serving will and checks that it reproduces the Keras predictions on cv; a version folder is never overwritten.
+
 ## Project structure
 
 The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/): several Python packages that share one lockfile and one virtual environment. Feature engineering lives in its own package, `fraud-core`, which training uses today and the API will use next, so a transaction is always transformed the same way in both places. Keeping that code in one place avoids training-serving skew, where a model silently degrades in production because its inputs are computed differently from training.
@@ -110,11 +123,13 @@ fraud-detection/
 │   └── fraud-core/               # shared by training and serving (numpy, pandas, scikit-learn)
 │       └── src/fraud_core/
 │           ├── columns.py        # names of the raw columns
-│           └── features.py       # feature engineering, train-only scaling and encoding
+│           ├── features.py       # feature engineering, train-only scaling and encoding
+│           └── model.py          # load a model bundle and score transactions with NumPy
 ├── training/                     # everything needed to build the model (TensorFlow, Jupyter)
 │   ├── src/fraud_training/
 │   │   ├── data.py               # loading and the time-based train/cv/test split
 │   │   ├── train.py              # baselines, the neural network and its training loop
+│   │   ├── export.py             # fraud-train: train the final model and export a bundle
 │   │   ├── evaluate.py           # metrics, PR curves and cost by threshold
 │   │   ├── error_analysis.py     # error sampling, tagging and card-history counts
 │   │   ├── tune_fraud_weight.py  # search for the fraud class weight
@@ -122,6 +137,7 @@ fraud-detection/
 │   ├── notebooks/                # 01 EDA, 02 baselines, 03 neural network, 04 threshold
 │   ├── reports/                  # figures and search results
 │   └── tests/
+├── models/                       # published model bundles, one folder per version
 ├── docs/
 │   └── error-analysis.md         # error analysis strategies and how they were applied
 └── conftest.py                   # test fixtures shared by every package
@@ -139,6 +155,7 @@ uv run kaggle datasets download -d kartik2112/fraud-detection -p data/sparkov --
 uv run fraud-baselines                       # baseline table
 uv run fraud-tune-weight                     # fraud weight search (about 20 minutes)
 uv run fraud-tune-training                   # learning rate search (about 20 minutes)
+uv run fraud-train --version 1.0.0           # export a model bundle to models/ (about 4 minutes)
 uv run jupyter lab notebooks                 # notebooks
 cd ..
 

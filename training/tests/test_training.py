@@ -5,9 +5,12 @@ import pandas as pd
 import pytest
 
 from fraud_core.columns import TIME
+from fraud_core.model import FraudModel
 from fraud_training.data import split_by_time
 from fraud_training.error_analysis import count_tags, recent_card_activity
 from fraud_training.evaluate import cost_by_threshold, evaluate
+from fraud_training.export import keras_to_layers
+from fraud_training.train import build_neural_net
 
 
 def test_split_by_time_train_is_past(transactions):
@@ -51,3 +54,11 @@ def test_cost_by_threshold_prices_each_error_type():
     row = costs.loc[0.5]
     assert row["missed_frauds"] == 1 and row["false_alarms"] == 1
     assert row["total_cost"] == pytest.approx(30 + 10)
+
+
+def test_exported_layers_reproduce_keras():
+    # An untrained network is enough: the point is that NumPy and Keras compute the same thing.
+    model = build_neural_net(n_features=5)
+    X = np.random.default_rng(0).normal(size=(50, 5)).astype("float32")
+    numpy_model = FraudModel(keras_to_layers(model), preprocessor=None, metadata={})
+    np.testing.assert_allclose(numpy_model.forward(X), model.predict(X, verbose=0).ravel(), atol=1e-6)
