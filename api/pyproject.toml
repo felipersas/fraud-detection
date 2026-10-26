@@ -1,0 +1,20 @@
+[project]
+name = "fraud-api"
+version = "0.1.0"
+description = "HTTP API that scores card transactions with a published fraud model bundle."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.162",
+    "fraud-core",
+    "uvicorn>=0.54",
+]
+
+[project.scripts]
+fraud-api = "fraud_api.main:run"
+
+[tool.uv.sources]
+fraud-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

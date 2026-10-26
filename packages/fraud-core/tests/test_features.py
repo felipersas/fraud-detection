@@ -46,3 +46,10 @@ def test_features_exclude_identifiers_and_target(transactions):
 def test_haversine_known_distance():
     # São Paulo to Rio de Janeiro is roughly 360 km in a straight line.
     assert haversine_km(-23.55, -46.63, -22.91, -43.17) == pytest.approx(360, abs=10)
+
+
+def test_categories_lists_what_train_contained(train_and_new):
+    train, _ = train_and_new
+    prep = Preprocessor().fit(train)
+    assert prep.categories["category"] == sorted(train["category"].unique())
+    assert prep.categories["gender"] == ["F", "M"]

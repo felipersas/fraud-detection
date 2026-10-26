@@ -90,3 +90,9 @@ class Preprocessor:
     @property
     def feature_names(self) -> list[str]:
         return list(self.columns.get_feature_names_out())
+
+    @property
+    def categories(self) -> dict[str, list[str]]:
+        """Values seen in train for each categorical column; anything else is unknown to the model."""
+        encoder = self.columns.named_transformers_["categorical"]
+        return {col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_)}
