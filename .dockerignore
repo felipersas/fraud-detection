@@ -1,0 +1,11 @@
+# Allowlist: only what the API image needs reaches the build context.
+*
+!pyproject.toml
+!uv.lock
+!api/pyproject.toml
+!api/src
+!packages/fraud-core/pyproject.toml
+!packages/fraud-core/src
+!training/pyproject.toml
+!models
+**/__pycache__
