@@ -1,5 +1,8 @@
 # Credit Card Fraud Detection
 
+[![CI](https://github.com/felipersas/fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/felipersas/fraud-detection/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Detecting fraudulent credit card transactions with a neural network, built as a hands-on project alongside the [Machine Learning Specialization](https://www.coursera.org/specializations/machine-learning-introduction) (DeepLearning.AI + Stanford).
 
 The focus is less on squeezing out the best score and more on doing each step the right way: splitting before preprocessing, choosing metrics that work with rare classes, tuning hyperparameters on a validation set, diagnosing bias vs variance, using error analysis to decide what to build next, and serving the result the way a production model would be: versioned, validated, containerized and tested.
