@@ -4,62 +4,73 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.data import TARGET, split_by_time, split_stratified
+from src.data import TARGET, TIME, split_by_time
 from src.evaluate import evaluate
-from src.features import Preprocessor
+from src.features import NUMERIC, Preprocessor, haversine_km, make_features
 
 
 @pytest.fixture
 def df():
+    """Fake transactions with the same columns as the Sparkov files, over 2019-2020."""
     rng = np.random.default_rng(0)
-    n = 10_000
-    data = {"Time": np.sort(rng.uniform(0, 2 * 86400, n))}
-    data |= {f"V{i}": rng.normal(size=n) for i in range(1, 29)}
-    data["Amount"] = rng.exponential(80, n)
-    data[TARGET] = (rng.random(n) < 0.02).astype(int)
-    # Shuffle rows so the tests prove split_by_time does its own sorting.
-    return pd.DataFrame(data).sample(frac=1, random_state=0)
+    n = 5_000
+    start = pd.Timestamp("2019-01-01").value
+    end = pd.Timestamp("2020-12-31").value
+    return pd.DataFrame(
+        {
+            TIME: pd.to_datetime(np.sort(rng.integers(start, end, n))),
+            "amt": rng.exponential(70, n),
+            "dob": pd.to_datetime("1980-01-01") + pd.to_timedelta(rng.integers(0, 15_000, n), unit="D"),
+            "city_pop": rng.integers(100, 1_000_000, n),
+            "lat": rng.uniform(30, 45, n),
+            "long": rng.uniform(-120, -75, n),
+            "merch_lat": rng.uniform(30, 45, n),
+            "merch_long": rng.uniform(-120, -75, n),
+            "category": rng.choice(["travel", "grocery_pos", "shopping_net"], n),
+            "gender": rng.choice(["F", "M"], n),
+            TARGET: (rng.random(n) < 0.02).astype(int),
+        }
+    )
 
 
 def test_split_by_time_train_is_past(df):
     s = split_by_time(df)
-    assert s.train["Time"].max() <= s.cv["Time"].min()
-    assert s.cv["Time"].max() <= s.test["Time"].min()
+    assert s.train[TIME].max() < s.cv[TIME].min()
+    assert s.cv[TIME].max() < s.test[TIME].min()
     assert len(s.train) + len(s.cv) + len(s.test) == len(df)
-
-
-def test_split_stratified_keeps_fraud_rate(df):
-    s = split_stratified(df)
-    rate = df[TARGET].mean()
-    for part in (s.train, s.cv, s.test):
-        assert part[TARGET].mean() == pytest.approx(rate, abs=0.003)
-
-
-def test_split_stratified_does_not_overlap(df):
-    s = split_stratified(df)
-    train, cv, test = (set(p.index) for p in (s.train, s.cv, s.test))
-    assert not (train & cv or train & test or cv & test)
-    assert len(train | cv | test) == len(df)
 
 
 def test_preprocessor_uses_only_train_stats(df):
     s = split_by_time(df)
     prep = Preprocessor().fit(s.train)
     X_train, _ = prep.transform(s.train)
-    # Standardized train features have mean 0 and std 1 by construction.
-    np.testing.assert_allclose(X_train.mean(axis=0), 0, atol=1e-8)
-    np.testing.assert_allclose(X_train.std(axis=0), 1, atol=1e-8)
+    # Standardized numeric train features have mean 0 and std 1 by construction.
+    numeric = X_train[:, : len(NUMERIC)]
+    np.testing.assert_allclose(numeric.mean(axis=0), 0, atol=1e-8)
+    np.testing.assert_allclose(numeric.std(axis=0), 1, atol=1e-8)
     # Transforming a wildly different test set must not change what was learned.
-    before = prep.scaler.mean_.copy()
-    prep.transform(s.test.assign(Amount=s.test["Amount"] * 1000))
-    np.testing.assert_array_equal(prep.scaler.mean_, before)
+    scaler = prep.columns.named_transformers_["numeric"]
+    before = scaler.mean_.copy()
+    prep.transform(s.test.assign(amt=s.test["amt"] * 1000))
+    np.testing.assert_array_equal(scaler.mean_, before)
 
 
-def test_features_drop_raw_time_and_target(df):
-    prep = Preprocessor().fit(df)
-    assert "Time" not in prep.feature_names
-    assert TARGET not in prep.feature_names
-    assert "hour" in prep.feature_names
+def test_unseen_category_does_not_break_transform(df):
+    s = split_by_time(df)
+    prep = Preprocessor().fit(s.train)
+    X, _ = prep.transform(s.test.assign(category="brand_new_category"))
+    assert X.shape[1] == len(prep.feature_names)
+
+
+def test_features_exclude_identifiers_and_target(df):
+    features = make_features(df.assign(cc_num=1, trans_num="x"))
+    for col in ["cc_num", "trans_num", TARGET, TIME]:
+        assert col not in features.columns
+
+
+def test_haversine_known_distance():
+    # São Paulo to Rio de Janeiro is roughly 360 km in a straight line.
+    assert haversine_km(-23.55, -46.63, -22.91, -43.17) == pytest.approx(360, abs=10)
 
 
 def test_lazy_model_has_high_accuracy_and_zero_recall():

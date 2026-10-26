@@ -5,3 +5,4 @@ tensorflow==2.21.0
 matplotlib==3.11.2
 jupyter==1.1.1
 pytest==9.1.1
+kaggle==2.2.5
