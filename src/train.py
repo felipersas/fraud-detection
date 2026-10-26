@@ -6,14 +6,13 @@ Run the baselines on the cv set:
 """
 
 import numpy as np
+import tensorflow as tf
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 
 from src.data import load_raw, split_by_time
 from src.evaluate import confusion, evaluate, results_table
 from src.features import Preprocessor
-
-import tensorflow as tf
 
 
 def train_lazy(X: np.ndarray, y: np.ndarray) -> DummyClassifier:
@@ -38,21 +37,18 @@ def train_logistic(X: np.ndarray, y: np.ndarray, lambda_: float = 0.0, class_wei
 
 
 def build_neural_net(n_features: int, learning_rate: float = 1e-4):
-    """Build and compile a small Keras network for binary classification.
+    """Build and compile a small Keras network that outputs P(fraud).
 
-    TODO: implement. A good starting point:
-    - tf.keras.Sequential, starting with tf.keras.Input(shape=(n_features,))
-    - two small Dense hidden layers with activation="relu" (e.g. 16 and 8 units)
-    - a Dense(1, activation="sigmoid") output, so the network returns P(fraud)
-    - compile with Adam(learning_rate=1e-3), BinaryCrossentropy() as the loss and
-      tf.keras.metrics.AUC(curve="PR", name="pr_auc") as the tracked metric
+    Architecture: two hidden Dense layers with ReLU (8 and 4 units) and a
+    single sigmoid output unit, so the network returns a probability. Every
+    Dense layer carries L2 regularization (λ = 0.001) to keep the weights small.
+    The loss is binary cross-entropy, optimized with Adam, and PR-AUC is tracked
+    during training because accuracy is meaningless with 0.5% fraud.
 
-    When fitting, pass class_weight={0: 1, 1: w} to up-weight frauds and
-    validation_data=(X_cv, y_cv) to track J_train vs J_cv per epoch.
-    For L2 regularization (λ), add kernel_regularizer=tf.keras.regularizers.L2(λ)
-    to the Dense layers.
+    The network is deliberately small: the inputs are 22 tabular features, and
+    at this size J_train and J_cv stay together, with no sign of overfitting.
     """
-    reg = tf.keras.regularizers.L2(0.001)  # Example regularization strength
+    reg = tf.keras.regularizers.L2(0.001)
     model = tf.keras.Sequential([
         tf.keras.Input(shape=(n_features,)),
         tf.keras.layers.Dense(8, activation="relu", kernel_regularizer=reg),
