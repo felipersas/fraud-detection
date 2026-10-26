@@ -16,6 +16,7 @@ fraud-baselines = "fraud_training.train:main"
 fraud-train = "fraud_training.export:main"
 fraud-tune-weight = "fraud_training.tune_fraud_weight:main"
 fraud-tune-training = "fraud_training.tune_training:main"
+fraud-compare-card-history = "fraud_training.compare_card_history:main"
 
 [tool.uv.sources]
 fraud-core = { workspace = true }

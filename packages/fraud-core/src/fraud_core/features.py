@@ -6,6 +6,9 @@ Two steps with very different rules:
 - Preprocessor: learns statistics (mean and standard deviation per numeric
   feature, the list of categories), so it is fitted on train only and merely
   applied to cv and test.
+
+Card-history features (fraud_core.history) are optional: models from 2.0.0 on
+use them, earlier models score each transaction on its own.
 """
 
 import numpy as np
@@ -14,11 +17,16 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from fraud_core.columns import TARGET, TIME
+from fraud_core.history import HISTORY_COLUMNS
 
 # Raw columns that make_features reads; anything scoring a transaction must provide them.
 RAW_INPUTS = [TIME, "amt", "dob", "city_pop", "lat", "long", "merch_lat", "merch_long", "category", "gender"]
 
+# Columns card_history adds, needed on top of RAW_INPUTS by card-history models.
+HISTORY_INPUTS = HISTORY_COLUMNS
+
 NUMERIC = ["log_amt", "hour", "day_of_week", "age", "log_city_pop", "distance_km"]
+HISTORY_NUMERIC = ["tx_last_24h", "night_tx_last_24h", "large_tx_last_24h", "log_amt_last_24h", "log_hours_since_prev"]
 CATEGORICAL = ["category", "gender"]
 
 EARTH_RADIUS_KM = 6371
@@ -31,15 +39,17 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return 2 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(a))
 
 
-def make_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Build one row of features per transaction, using only that transaction.
+def make_features(df: pd.DataFrame, card_history: bool = False) -> pd.DataFrame:
+    """Build one row of features per transaction.
 
     Columns that identify a person (name, street, card number, transaction id)
-    are left out on purpose: they would let the model memorize who was
+    are never used as features: they would let the model memorize who was
     defrauded in the training period instead of learning what fraud looks like.
+    The card number only serves to look up the card's own history, and only
+    when `card_history` is set (the columns from fraud_core.history must be present).
     """
     t = df[TIME]
-    return pd.DataFrame(
+    features = pd.DataFrame(
         {
             # Amounts are skewed (most purchases are small, a few are huge);
             # log1p compresses the long tail so it does not dominate training.
@@ -55,6 +65,15 @@ def make_features(df: pd.DataFrame) -> pd.DataFrame:
         },
         index=df.index,
     )
+    if card_history:
+        # Counts of recent purchases are used as they are; money and time gaps are
+        # skewed like the amount, so they are log-compressed the same way.
+        features["tx_last_24h"] = df["tx_last_24h"]
+        features["night_tx_last_24h"] = df["night_tx_last_24h"]
+        features["large_tx_last_24h"] = df["large_tx_last_24h"]
+        features["log_amt_last_24h"] = np.log1p(df["amt_last_24h"])
+        features["log_hours_since_prev"] = np.log1p(df["hours_since_prev"])
+    return features
 
 
 class Preprocessor:
@@ -67,16 +86,21 @@ class Preprocessor:
       seen in train are encoded as all zeros instead of raising an error.
     """
 
-    def __init__(self):
+    # Class-level default, so preprocessors saved before card history existed still load.
+    card_history = False
+
+    def __init__(self, card_history: bool = False):
+        self.card_history = card_history
+        numeric = NUMERIC + HISTORY_NUMERIC if card_history else NUMERIC
         self.columns = ColumnTransformer(
             [
-                ("numeric", StandardScaler(), NUMERIC),
+                ("numeric", StandardScaler(), numeric),
                 ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
             ]
         )
 
     def fit(self, train_df: pd.DataFrame) -> "Preprocessor":
-        self.columns.fit(make_features(train_df))
+        self.columns.fit(make_features(train_df, self.card_history))
         return self
 
     def transform(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -85,7 +109,7 @@ class Preprocessor:
 
     def transform_features(self, df: pd.DataFrame) -> np.ndarray:
         """Return only X, for transactions whose label is unknown (as in serving)."""
-        return self.columns.transform(make_features(df))
+        return self.columns.transform(make_features(df, self.card_history))
 
     @property
     def feature_names(self) -> list[str]:

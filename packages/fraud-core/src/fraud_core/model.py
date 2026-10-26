@@ -93,6 +93,11 @@ class FraudModel:
     def threshold(self) -> float:
         return self.metadata["threshold"]
 
+    @property
+    def uses_card_history(self) -> bool:
+        """True when the model needs the card-history columns (fraud_core.history) as input."""
+        return self.metadata.get("card_history", False)
+
     def forward(self, X: np.ndarray) -> np.ndarray:
         """Run already-transformed features through the network; returns P(fraud) per row."""
         for layer in self.layers:

@@ -2,3 +2,4 @@
 
 TARGET = "is_fraud"
 TIME = "trans_date_trans_time"
+CARD = "cc_num"

@@ -1,6 +1,7 @@
 """Train the final model and export it as a versioned bundle for serving.
 
-    fraud-train --version 1.0.0
+    fraud-train --version 1.0.0                    # scores each purchase on its own
+    fraud-train --version 2.0.0 --card-history     # also uses the card's recent history
 
 The bundle (see fraud_core.model) holds the network weights, the fitted
 preprocessor and a metadata file describing how the model was built. A
@@ -24,7 +25,8 @@ import joblib
 import numpy as np
 
 from fraud_core.columns import TARGET, TIME
-from fraud_core.features import RAW_INPUTS, Preprocessor
+from fraud_core.features import HISTORY_INPUTS, RAW_INPUTS, Preprocessor
+from fraud_core.history import card_history
 from fraud_core.model import METADATA_FILE, PREPROCESSOR_FILE, WEIGHTS_FILE, DenseLayer, FraudModel, save_weights
 from fraud_training.data import KAGGLE_DATASET, ROOT, load_raw, split_by_time
 from fraud_training.evaluate import FALSE_ALARM_COST, cost_by_threshold, evaluate
@@ -75,14 +77,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="model version, e.g. 1.0.0")
     parser.add_argument("--output", type=Path, default=MODELS_DIR, help="folder that holds every model version")
+    parser.add_argument("--card-history", action="store_true", help="add features from each card's recent purchases")
     args = parser.parse_args()
 
     out_dir = args.output / args.version
     if out_dir.exists():
         parser.error(f"{out_dir} already exists; publish a new version instead of overwriting one")
 
-    split = split_by_time(load_raw())
-    prep = Preprocessor().fit(split.train)
+    df = load_raw()
+    if args.card_history:
+        # Computed on the whole timeline at once; each purchase only sees earlier ones.
+        df = df.join(card_history(df))
+    split = split_by_time(df)
+    prep = Preprocessor(card_history=args.card_history).fit(split.train)
     X_train, y_train = prep.transform(split.train)
     X_cv, y_cv = prep.transform(split.cv)
 
@@ -117,7 +124,8 @@ def main():
             "precision": round(at_threshold["precision"], 4),
             "recall": round(at_threshold["recall"], 4),
         },
-        "inputs": RAW_INPUTS,
+        "card_history": args.card_history,
+        "inputs": RAW_INPUTS + (HISTORY_INPUTS if args.card_history else []),
         "features": prep.feature_names,
         "trained_with": {
             "python": platform.python_version(),

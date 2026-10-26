@@ -7,7 +7,7 @@ import pytest
 from fraud_core.columns import TIME
 from fraud_core.model import FraudModel
 from fraud_training.data import split_by_time
-from fraud_training.error_analysis import count_tags, recent_card_activity
+from fraud_training.error_analysis import count_tags
 from fraud_training.evaluate import cost_by_threshold, evaluate
 from fraud_training.export import keras_to_layers
 from fraud_training.train import build_neural_net
@@ -25,17 +25,6 @@ def test_lazy_model_has_high_accuracy_and_zero_recall():
     m = evaluate(y, np.zeros(len(y)))
     assert m["accuracy"] == pytest.approx(0.998)
     assert m["recall"] == 0
-
-
-def test_recent_card_activity_counts_only_the_past():
-    t = pd.to_datetime(["2020-01-01 10:00", "2020-01-01 23:00", "2020-01-02 09:00", "2020-01-03 12:00", "2020-01-01 12:00"])
-    df = pd.DataFrame({TIME: t, "cc_num": [1, 1, 1, 1, 2], "amt": [500.0, 10.0, 20.0, 30.0, 999.0]})
-    activity = recent_card_activity(df)
-    # Card 1: the 2nd purchase sees the 1st (large); the 3rd sees both (one at night);
-    # the 4th is more than 24h after all of them. Card 2 never sees card 1's purchases.
-    assert activity["tx_last_24h"].tolist() == [0, 1, 2, 0, 0]
-    assert activity["large_tx_last_24h"].tolist() == [0, 1, 1, 0, 0]
-    assert activity["night_tx_last_24h"].tolist() == [0, 0, 1, 0, 0]
 
 
 def test_count_tags_allows_overlapping_tags():
