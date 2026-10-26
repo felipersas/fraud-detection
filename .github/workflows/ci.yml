@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      # --frozen fails if uv.lock is out of date, instead of silently resolving new versions.
+      - run: uv sync --frozen
+      - run: uv run pytest
+
+  api-image:
+    name: API image
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -f api/Dockerfile -t fraud-api:ci .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 8000:8000 fraud-api:ci
+          for _ in $(seq 1 30); do
+            if curl -sf localhost:8000/health; then
+              curl -sf -X POST localhost:8000/predict -H 'content-type: application/json' \
+                -d '{"transaction_time":"2020-06-17T00:33:41","amount":1167.06,"category":"shopping_net","gender":"F","date_of_birth":"1985-03-02","city_population":2500,"customer_latitude":40.71,"customer_longitude":-74.0,"merchant_latitude":40.95,"merchant_longitude":-73.6}'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs api
+          exit 1
