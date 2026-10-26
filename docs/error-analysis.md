@@ -76,6 +76,19 @@ Some errors are not a modelling problem: the inputs simply do not contain the si
 
 **In this project**, an investigator would ask "is this normal for this card?". The model scores each transaction in isolation, so it cannot answer. Features built from the card's recent history (number of purchases, night purchases and large purchases in the previous 24 hours) supply that context. They must be computed **only from earlier transactions of the same card**, which is what a bank knows when a purchase arrives. Using later transactions, or past fraud labels that would not yet be known, leaks the answer into the features.
 
+## Closing the loop
+
+Error analysis is only worth the time if it changes what you build next. Here it pointed at one missing input, recent card activity, and model 2.0.0 added it. Measured on cv, each model at its own cost-based threshold:
+
+| | Model 1.0.0 | Model 2.0.0 |
+|---|---:|---:|
+| Missed frauds | 204 | 56 |
+| of which: card already in a burst | 194 | 20 |
+| False alarms | 2,722 | 752 |
+| of which: calm card history | 2,316 | 310 |
+
+The two groups the analysis singled out are the ones that shrank, and both error types fell at once, which moving the threshold alone could never do. The 56 frauds still missed are mostly small and often happen during the day; they are where the next round of analysis starts ([`training/notebooks/05_card_history.ipynb`](../training/notebooks/05_card_history.ipynb)).
+
 ## Common pitfalls
 
 - Analysing the test set instead of cv.
