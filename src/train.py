@@ -37,7 +37,7 @@ def train_logistic(X: np.ndarray, y: np.ndarray, lambda_: float = 0.0, class_wei
     return model.fit(X, y)
 
 
-def build_neural_net(n_features: int):
+def build_neural_net(n_features: int, learning_rate: float = 1e-4):
     """Build and compile a small Keras network for binary classification.
 
     TODO: implement. A good starting point:
@@ -60,11 +60,53 @@ def build_neural_net(n_features: int):
         tf.keras.layers.Dense(1, activation="sigmoid")
     ])
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss=tf.keras.losses.BinaryCrossentropy(),
         metrics=[tf.keras.metrics.AUC(curve="PR", name="pr_auc")]
     )
     return model
+
+
+def train_neural_net(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_cv: np.ndarray,
+    y_cv: np.ndarray,
+    fraud_weight: float,
+    learning_rate: float = 1e-4,
+    max_epochs: int = 100,
+    patience: int | None = None,
+    seed: int = 0,
+    batch_size: int = 512,
+    verbose: int = 0,
+):
+    """Build and train the network, returning (model, history).
+
+    The cv set is passed as validation data so J_cv is measured after every
+    epoch. It gets the same fraud weight as train, otherwise J_train (weighted
+    by Keras) and J_cv (unweighted) would sit on different scales.
+
+    With `patience`, training uses early stopping: it stops once J_cv has not
+    improved for `patience` epochs in a row and rolls back to the weights of the
+    best epoch. Without it, training runs for exactly `max_epochs`.
+    """
+    tf.keras.utils.set_random_seed(seed)  # seeds Python, NumPy and TensorFlow together
+    model = build_neural_net(n_features=X_train.shape[1], learning_rate=learning_rate)
+    callbacks = []
+    if patience is not None:
+        callbacks.append(
+            tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=patience, restore_best_weights=True)
+        )
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_cv, y_cv, np.where(y_cv == 1, fraud_weight, 1.0)),
+        class_weight={0: 1, 1: fraud_weight},
+        epochs=max_epochs,
+        batch_size=batch_size,
+        callbacks=callbacks,
+        verbose=verbose,
+    )
+    return model, history
 
 
 def main():
