@@ -48,10 +48,16 @@ def keras_to_layers(model) -> list[DenseLayer]:
 
 
 def git_commit() -> str | None:
-    """Commit the code was trained from, with "-dirty" if there were uncommitted changes."""
+    """Commit the code was trained from, with "-dirty" if tracked files had uncommitted changes.
+
+    Untracked files are ignored: experiment outputs written next to the code are
+    not changes to the code itself.
+    """
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
-        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True)
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True, check=True
+        )
     except (OSError, subprocess.CalledProcessError):
         return None
     return sha.stdout.strip() + ("-dirty" if dirty.stdout.strip() else "")
