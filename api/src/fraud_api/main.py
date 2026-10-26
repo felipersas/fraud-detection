@@ -6,10 +6,16 @@ Configuration (environment variables):
 - FRAUD_MODELS_DIR: folder holding one subfolder per model version (default: models)
 - FRAUD_MODEL_VERSION: version to serve (default: the highest version found)
 - HOST / PORT: where to listen (default: 0.0.0.0:8000)
+
+Card-history models (2.x) need each card's recent purchases. The API keeps
+them in memory as it scores, so a new instance starts with every card looking
+quiet, and several replicas would not share what they saw. A shared store
+such as Redis, warmed up from recent transactions, would fix both.
 """
 
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -22,6 +28,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from fraud_core.columns import TIME
+from fraud_core.history import CardHistoryStore
 from fraud_core.model import FraudModel
 
 logger = logging.getLogger("fraud_api")
@@ -39,6 +46,7 @@ EXAMPLE_TRANSACTION = {
     "customer_longitude": -74.0,
     "merchant_latitude": 40.95,
     "merchant_longitude": -73.6,
+    "card_id": "card-0001",
 }
 
 
@@ -59,7 +67,8 @@ class Transaction(BaseModel):
     merchant_longitude: float = Field(ge=-180, le=180)
     card_id: str | None = Field(
         default=None,
-        description="card identifier; unused by 1.x models, which score each purchase on its own",
+        min_length=1,
+        description="card identifier; required by card-history models (2.x), ignored by 1.x",
     )
 
     @field_validator("transaction_time")
@@ -114,7 +123,24 @@ def to_frame(transactions: list[Transaction]) -> pd.DataFrame:
     )
 
 
-def score(model: FraudModel, transactions: list[Transaction]) -> list[Prediction]:
+def card_history_features(store: CardHistoryStore, transactions: list[Transaction]) -> pd.DataFrame:
+    """Each transaction's card history, recording the transactions as they are scored.
+
+    Purchases are processed in time order, so within a batch a later purchase
+    sees the earlier ones, exactly as fraud_core.history.card_history does in
+    training. Every scored purchase is recorded, flagged or not: an attempted
+    fraud is still part of the card's recent activity.
+    """
+    rows: list[dict] = [{} for _ in transactions]
+    for i in sorted(range(len(transactions)), key=lambda i: transactions[i].transaction_time):
+        t = transactions[i]
+        rows[i] = store.features(t.card_id, t.transaction_time)
+        store.add(t.card_id, t.transaction_time, t.amount)
+    return pd.DataFrame(rows)
+
+
+def score(app: FastAPI, transactions: list[Transaction]) -> list[Prediction]:
+    model: FraudModel = app.state.model
     known = model.preprocessor.categories["category"]
     unknown = sorted({t.category for t in transactions} - set(known))
     if unknown:
@@ -123,7 +149,19 @@ def score(model: FraudModel, transactions: list[Transaction]) -> list[Prediction
         raise HTTPException(status_code=422, detail=f"unknown category {unknown}; expected one of {known}")
 
     start = time.perf_counter()
-    probabilities = model.predict_proba(to_frame(transactions))
+    frame = to_frame(transactions)
+    if model.uses_card_history:
+        missing = [i for i, t in enumerate(transactions) if t.card_id is None]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"model {model.version} uses card history, so card_id is required (missing at positions {missing})",
+            )
+        # Reading a card's history and recording the new purchase must happen together,
+        # or two concurrent requests for the same card could miss each other.
+        with app.state.history_lock:
+            frame = frame.join(card_history_features(app.state.history, transactions))
+    probabilities = model.predict_proba(frame)
     predictions = [
         Prediction(
             fraud_probability=round(float(p), 6),
@@ -148,6 +186,9 @@ def score(model: FraudModel, transactions: list[Transaction]) -> list[Prediction
 async def lifespan(app: FastAPI):
     bundle = find_bundle(Path(os.environ.get("FRAUD_MODELS_DIR", "models")), os.environ.get("FRAUD_MODEL_VERSION"))
     app.state.model = FraudModel.load(bundle)
+    # Recent purchases per card, filled as requests arrive; only card-history models read it.
+    app.state.history = CardHistoryStore()
+    app.state.history_lock = threading.Lock()
     logger.info("loaded model version=%s from %s", app.state.model.version, bundle)
     yield
 
@@ -170,17 +211,21 @@ def model_info(request: Request) -> dict:
     """What the served model is, how it was trained and which inputs it accepts."""
     model: FraudModel = request.app.state.model
     keys = ["version", "created_at", "git_commit", "train_data", "threshold", "decision_cost", "cv_metrics"]
-    return {**{k: model.metadata[k] for k in keys}, "categories": model.preprocessor.categories}
+    return {
+        **{k: model.metadata[k] for k in keys},
+        "card_history": model.uses_card_history,
+        "categories": model.preprocessor.categories,
+    }
 
 
 @app.post("/predict")
 def predict(transaction: Transaction, request: Request) -> Prediction:
-    return score(request.app.state.model, [transaction])[0]
+    return score(request.app, [transaction])[0]
 
 
 @app.post("/predict/batch")
 def predict_batch(batch: Batch, request: Request) -> BatchPrediction:
-    return BatchPrediction(predictions=score(request.app.state.model, batch.transactions))
+    return BatchPrediction(predictions=score(request.app, batch.transactions))
 
 
 def run():

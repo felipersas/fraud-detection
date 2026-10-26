@@ -31,7 +31,7 @@ jobs:
           for _ in $(seq 1 30); do
             if curl -sf localhost:8000/health; then
               curl -sf -X POST localhost:8000/predict -H 'content-type: application/json' \
-                -d '{"transaction_time":"2020-06-17T00:33:41","amount":1167.06,"category":"shopping_net","gender":"F","date_of_birth":"1985-03-02","city_population":2500,"customer_latitude":40.71,"customer_longitude":-74.0,"merchant_latitude":40.95,"merchant_longitude":-73.6}'
+                -d '{"transaction_time":"2020-06-17T00:33:41","amount":1167.06,"category":"shopping_net","gender":"F","date_of_birth":"1985-03-02","city_population":2500,"customer_latitude":40.71,"customer_longitude":-74.0,"merchant_latitude":40.95,"merchant_longitude":-73.6,"card_id":"ci-card"}'
               exit 0
             fi
             sleep 1
