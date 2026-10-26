@@ -11,7 +11,7 @@ picked by src/tune_fraud_weight.py:
 
 Each setup runs with several seeds, so averages can be compared instead of luck.
 
-    python -m src.tune_training
+    fraud-tune-training
 """
 
 import time
@@ -19,10 +19,10 @@ import time
 import numpy as np
 import pandas as pd
 
-from src.data import ROOT, load_raw, split_by_time
-from src.evaluate import evaluate
-from src.features import Preprocessor
-from src.train import train_neural_net
+from fraud_training.data import ROOT, load_raw, split_by_time
+from fraud_training.evaluate import evaluate
+from fraud_core.features import Preprocessor
+from fraud_training.train import train_neural_net
 
 FRAUD_WEIGHT = 10
 SEEDS = [0, 1, 2]

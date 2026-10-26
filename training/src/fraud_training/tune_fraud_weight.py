@@ -7,17 +7,17 @@ weights. Comparing averages tells a real effect apart from luck.
 Everything except the weight (architecture, learning rate, epochs) is kept
 fixed, so any difference in the results comes from the weight alone.
 
-    python -m src.tune_fraud_weight
+    fraud-tune-weight
 """
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from src.data import ROOT, load_raw, split_by_time
-from src.evaluate import evaluate
-from src.features import Preprocessor
-from src.train import build_neural_net
+from fraud_training.data import ROOT, load_raw, split_by_time
+from fraud_training.evaluate import evaluate
+from fraud_core.features import Preprocessor
+from fraud_training.train import build_neural_net
 
 # 176 is the class ratio in train (legit / fraud); 1 means no weighting at all.
 WEIGHTS = [1, 10, 50, 176, 400]

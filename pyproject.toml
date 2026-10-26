@@ -1,0 +1,27 @@
+[project]
+name = "fraud-detection"
+version = "0.1.0"
+description = "Credit card fraud detection: model training and serving, in one uv workspace."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = ["fraud-core", "fraud-training"]
+
+[dependency-groups]
+dev = ["pytest>=9.1"]
+
+[tool.uv]
+# The root only ties the workspace together; it is not a package itself.
+package = false
+
+[tool.uv.workspace]
+members = ["packages/fraud-core", "training"]
+
+[tool.uv.sources]
+fraud-core = { workspace = true }
+fraud-training = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["packages/fraud-core/tests", "training/tests"]
+# Test files in different packages may share a name; importlib mode keeps them apart.
+addopts = "--import-mode=importlib"

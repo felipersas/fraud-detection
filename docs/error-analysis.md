@@ -2,7 +2,7 @@
 
 Training a model is a loop: choose an architecture, train it, diagnose it, and use the diagnosis to decide the next change. The first diagnostic is bias versus variance (learning curves, J_train vs J_cv), which tells you whether the model is too weak or fails to generalize. The second is **error analysis**, which tells you *which kinds of examples* the model gets wrong. Together they decide which idea deserves your time, out of the many that could be tried.
 
-This document collects the error analysis strategies used in this project, starting from the recipe taught in the [Machine Learning Specialization](https://www.coursera.org/learn/advanced-learning-algorithms/lecture/FaPgS/error-analysis), and shows how each one played out on the fraud data. The code lives in [`src/error_analysis.py`](../src/error_analysis.py) and the analysis in [`notebooks/03_neural_network.ipynb`](../notebooks/03_neural_network.ipynb).
+This document collects the error analysis strategies used in this project, starting from the recipe taught in the [Machine Learning Specialization](https://www.coursera.org/learn/advanced-learning-algorithms/lecture/FaPgS/error-analysis), and shows how each one played out on the fraud data. The code lives in [`fraud_training.error_analysis`](../training/src/fraud_training/error_analysis.py) and the analysis in [`training/notebooks/03_neural_network.ipynb`](../training/notebooks/03_neural_network.ipynb).
 
 ## Ground rules
 
@@ -20,7 +20,7 @@ This is the course recipe, and the backbone of everything else.
 3. **Count the tags and rank them.** Work on the largest groups first.
 4. **Use the ceiling.** If a tag covers *k* of the 100 errors, fixing everything in that group removes at most *k*% of the errors. Before spending weeks on an idea, check its ceiling. In the course example, a detector for deliberate misspellings in spam turned out to address only a few percent of the errors.
 
-With readable columns, tags can be written as rules (`amt < 100`, `hour in night_hours`) instead of being read one by one, which makes the analysis repeatable. `count_tags` in `src/error_analysis.py` does the counting.
+With readable columns, tags can be written as rules (`amt < 100`, `hour in night_hours`) instead of being read one by one, which makes the analysis repeatable. `count_tags` in `fraud_training.error_analysis` does the counting.
 
 **In this project**, on 100 sampled missed frauds:
 

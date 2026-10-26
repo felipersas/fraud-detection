@@ -2,7 +2,7 @@
 
 Run the baselines on the cv set:
 
-    python -m src.train
+    fraud-baselines
 """
 
 import numpy as np
@@ -10,9 +10,9 @@ import tensorflow as tf
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 
-from src.data import load_raw, split_by_time
-from src.evaluate import confusion, evaluate, results_table
-from src.features import Preprocessor
+from fraud_training.data import load_raw, split_by_time
+from fraud_training.evaluate import confusion, evaluate, results_table
+from fraud_core.features import Preprocessor
 
 
 # Final training setup, chosen on cv by src/tune_fraud_weight.py and src/tune_training.py.

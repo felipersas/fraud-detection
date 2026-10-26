@@ -1,0 +1,24 @@
+[project]
+name = "fraud-training"
+version = "0.1.0"
+description = "Data loading, experiments and training of the fraud detection model."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fraud-core",
+    "jupyter>=1.1",
+    "kaggle>=2.2",
+    "matplotlib>=3.11",
+    "tensorflow>=2.21",
+]
+
+[project.scripts]
+fraud-baselines = "fraud_training.train:main"
+fraud-tune-weight = "fraud_training.tune_fraud_weight:main"
+fraud-tune-training = "fraud_training.tune_training:main"
+
+[tool.uv.sources]
+fraud-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

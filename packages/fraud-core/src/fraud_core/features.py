@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.data import TARGET, TIME
+from fraud_core.columns import TARGET, TIME
 
 NUMERIC = ["log_amt", "hour", "day_of_week", "age", "log_city_pop", "distance_km"]
 CATEGORICAL = ["category", "gender"]

@@ -10,7 +10,7 @@ that group's share of the errors, which puts a ceiling on each idea.
 import numpy as np
 import pandas as pd
 
-from src.data import TARGET, TIME
+from fraud_training.data import TARGET, TIME
 
 NIGHT_HOURS = [22, 23, 0, 1, 2, 3]  # the high-risk hours found in the EDA
 

@@ -25,7 +25,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 - Online shopping and groceries carry about 10 times the fraud rate of restaurants.
 - Fraud arrives in bursts: a compromised card suffers about 10 fraudulent purchases within roughly two days.
 
-![Fraud rate by hour of day](reports/figures/eda_fraud_by_hour.png)
+![Fraud rate by hour of day](training/reports/figures/eda_fraud_by_hour.png)
 
 ## Approach
 
@@ -48,7 +48,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 
 Precision, recall and F1 use the default 0.5 threshold; PR-AUC is threshold-free. The neural network row is seed 0 of the final setup; across three seeds its PR-AUC is 0.855 ± 0.022.
 
-![Precision-recall curves on the cv set](reports/figures/pr_curve_comparison.png)
+![Precision-recall curves on the cv set](training/reports/figures/pr_curve_comparison.png)
 
 ### Choosing the fraud weight
 
@@ -96,49 +96,53 @@ A missed fraud costs the bank its purchase amount (the customer is refunded), an
 
 The cost-based threshold is 27% cheaper than the default, and the model avoids 96% of the $1.22 million that frauds would cost with no model. The choice depends on the assumed false alarm cost: the threshold stays at 0.23 for $5 to $10, and moves to 0.53 at $50.
 
-![Cost of each threshold](reports/figures/threshold_cost.png)
+![Cost of each threshold](training/reports/figures/threshold_cost.png)
 
 ## Project structure
 
+The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/): several Python packages that share one lockfile and one virtual environment. Feature engineering lives in its own package, `fraud-core`, which training uses today and the API will use next, so a transaction is always transformed the same way in both places. Keeping that code in one place avoids training-serving skew, where a model silently degrades in production because its inputs are computed differently from training.
+
 ```
 fraud-detection/
-├── src/
-│   ├── data.py               # loading and the time-based train/cv/test split
-│   ├── features.py           # feature engineering, train-only scaling and encoding
-│   ├── train.py              # baselines, the neural network and its training loop
-│   ├── evaluate.py           # metrics, confusion matrix, PR curves
-│   ├── error_analysis.py     # error sampling, tagging and card-history counts
-│   ├── tune_fraud_weight.py  # search for the fraud class weight
-│   └── tune_training.py      # search for the learning rate and stopping rule
-├── notebooks/
-│   ├── 01_eda.ipynb
-│   ├── 02_baselines.ipynb
-│   ├── 03_neural_network.ipynb
-│   └── 04_threshold.ipynb
+├── pyproject.toml                # workspace root: members and dev tools
+├── uv.lock                       # exact versions of every dependency
+├── packages/
+│   └── fraud-core/               # shared by training and serving (numpy, pandas, scikit-learn)
+│       └── src/fraud_core/
+│           ├── columns.py        # names of the raw columns
+│           └── features.py       # feature engineering, train-only scaling and encoding
+├── training/                     # everything needed to build the model (TensorFlow, Jupyter)
+│   ├── src/fraud_training/
+│   │   ├── data.py               # loading and the time-based train/cv/test split
+│   │   ├── train.py              # baselines, the neural network and its training loop
+│   │   ├── evaluate.py           # metrics, PR curves and cost by threshold
+│   │   ├── error_analysis.py     # error sampling, tagging and card-history counts
+│   │   ├── tune_fraud_weight.py  # search for the fraud class weight
+│   │   └── tune_training.py      # search for the learning rate and stopping rule
+│   ├── notebooks/                # 01 EDA, 02 baselines, 03 neural network, 04 threshold
+│   ├── reports/                  # figures and search results
+│   └── tests/
 ├── docs/
-│   └── error-analysis.md     # error analysis strategies and how they were applied
-├── reports/
-│   ├── figures/              # plots used in this README and the notebooks
-│   ├── fraud_weight_search.csv
-│   └── training_search.csv
-└── tests/                    # pipeline tests on synthetic data
+│   └── error-analysis.md         # error analysis strategies and how they were applied
+└── conftest.py                   # test fixtures shared by every package
 ```
 
 ## Running it
 
-Requires Python 3.12 and a free [Kaggle API token](https://www.kaggle.com/settings) to download the data.
+Requires [uv](https://docs.astral.sh/uv/) and a free [Kaggle API token](https://www.kaggle.com/settings) to download the data. uv installs Python 3.12 and every package from the lockfile.
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+uv sync                                      # create .venv with all workspace packages
 
-.venv/bin/kaggle datasets download -d kartik2112/fraud-detection -p data/sparkov --unzip
+cd training
+uv run kaggle datasets download -d kartik2112/fraud-detection -p data/sparkov --unzip
+uv run fraud-baselines                       # baseline table
+uv run fraud-tune-weight                     # fraud weight search (about 20 minutes)
+uv run fraud-tune-training                   # learning rate search (about 20 minutes)
+uv run jupyter lab notebooks                 # notebooks
+cd ..
 
-.venv/bin/python -m src.train              # baseline table
-.venv/bin/python -m src.tune_fraud_weight  # fraud weight search (about 20 minutes)
-.venv/bin/python -m src.tune_training      # learning rate search (about 20 minutes)
-.venv/bin/pytest                           # tests
-.venv/bin/jupyter lab                      # notebooks
+uv run pytest                                # tests for every package
 ```
 
 ## Limitations

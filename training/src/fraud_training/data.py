@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data" / "sparkov"
+from fraud_core.columns import TARGET, TIME
 
-TARGET = "is_fraud"
-TIME = "trans_date_trans_time"
+# The training/ folder: data, reports and notebooks all live under it.
+ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = ROOT / "data" / "sparkov"
 
 # Kaggle ships the data as two files that are already split by time:
 # fraudTrain.csv covers 2019-01-01 to 2020-06-21 and fraudTest.csv the rest of 2020.
@@ -32,7 +32,7 @@ TEST_START = pd.Timestamp("2020-06-21 12:14:00")
 def load_raw(data_dir: Path = DATA_DIR) -> pd.DataFrame:
     """Return every transaction from both Kaggle files, sorted by time.
 
-    Download the files first with:
+    Download the files first, from the training/ folder, with:
         kaggle datasets download -d kartik2112/fraud-detection -p data/sparkov --unzip
     """
     missing = [f for f in FILES if not (data_dir / f).exists()]
