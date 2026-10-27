@@ -9,7 +9,7 @@ The focus is less on squeezing out the best score and more on doing each step th
 
 ## Highlights
 
-- A small neural network reaches a **PR-AUC of 0.88** on the validation set, against **0.35** for logistic regression. The fraud patterns are non-linear (risky hours on both sides of midnight), which a linear model cannot capture.
+- A small neural network (model 1.0.2, transaction features only) reaches a **PR-AUC of 0.88** on the validation set, against **0.35** for logistic regression. The fraud patterns are non-linear (risky hours on both sides of midnight), which a linear model cannot capture.
 - Searching the fraud class weight on validation found that a small weight (10) works best: PR-AUC rose from **0.46** with a weight of 400 to **0.74**, and the usual default, the class ratio (176), scored only 0.55. Training with a larger learning rate and early stopping took it to **0.86** (average of three seeds).
 - Error analysis showed that both error types come from the same blind spot: the model scores each purchase on its own. **92%** of the missed frauds happen while the card is already in a fraud burst, and **85%** of the false alarms come from cards with a calm recent history.
 - Acting on it, model 2.0.2 adds features from each card's recent purchases. PR-AUC rises to **0.966** (three seeds), and at the cost-based threshold **both error types fall together**: missed frauds from 204 to **56**, false alarms from 2,722 to **752**, halving the cost on cv.
@@ -179,7 +179,7 @@ Each version is also a [GitHub release](https://github.com/felipersas/fraud-dete
 
 | Endpoint | What it does |
 |---|---|
-| `GET /health` | liveness check and the served model version |
+| `GET /health` | readiness check: the served model version and where card history is kept; 503 if Redis is down |
 | `GET /model` | how the served model was trained, its threshold, cv metrics and accepted categories |
 | `POST /predict` | scores one transaction |
 | `POST /predict/batch` | scores up to 1,000 transactions |
@@ -204,7 +204,7 @@ With `REDIS_URL` set, card history lives in Redis: each card is a sorted set of 
 
 Inputs are validated before scoring: amounts must be positive, coordinates within range, and the store category one the model saw in training. An unseen category would otherwise be encoded as "none of them" and produce a score the model was never trained for, so it is rejected with a 422 instead. Every request logs the number of transactions, how many were flagged, the model version and the latency, which is the raw material for monitoring.
 
-The Docker image installs only `fraud-api` and `fraud-core` (377 MB: 518 MB with scikit-learn and SciPy, which serving no longer needs, and more than 2 GB if it carried TensorFlow), runs as a non-root user and has a health check. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs ruff and mypy, every package's tests, builds and smoke tests the image, and starts the API with Redis to check that card history survives an API restart.
+The Docker image installs only `fraud-api` and `fraud-core` (377 MB, against 518 MB when it still carried scikit-learn and SciPy and more than 2 GB with TensorFlow), runs as a non-root user and has a health check. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs ruff and mypy, every package's tests, builds and smoke tests the image, and starts the API with Redis to check that card history survives an API restart.
 
 ## Project structure
 
@@ -263,7 +263,7 @@ uv run kaggle datasets download -d kartik2112/fraud-detection -p data/sparkov --
 uv run fraud-baselines                       # baseline table
 uv run fraud-tune-weight                     # fraud weight search (about 20 minutes)
 uv run fraud-tune-training                   # learning rate search (about 20 minutes)
-uv run fraud-compare-card-history           # with vs without card history (about 30 minutes)
+uv run fraud-compare-card-history            # with vs without card history (about 30 minutes)
 uv run fraud-train --version 2.1.0 --card-history  # export a new bundle to models/ (about 5 minutes)
 uv run jupyter lab notebooks                 # notebooks
 cd ..
