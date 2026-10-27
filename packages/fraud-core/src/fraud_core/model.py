@@ -3,8 +3,13 @@
 A bundle is a folder written by the training package (`fraud-train`):
 
 - weights.npz: the weights and bias of every Dense layer, plus each layer's activation
-- preprocessor.joblib: the Preprocessor fitted on the training set
+- preprocessor.json: what the Preprocessor learned on the training set (means, scales, categories)
 - metadata.json: version, training data, cv metrics and the decision threshold
+
+Bundles 1.0.0 and 2.0.0 predate the JSON format and store a pickled,
+scikit-learn based preprocessor.joblib instead. They still load wherever
+scikit-learn and joblib are installed (the training environment); 1.0.1 and
+2.0.1 are the same models repackaged, and they are what the API serves.
 
 The network is evaluated with NumPy instead of TensorFlow. A Dense layer only
 computes activation(X @ W + b), so a small stack of them needs a few lines of
@@ -15,14 +20,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import joblib
 import numpy as np
 import pandas as pd
 
 from fraud_core.features import Preprocessor
 
 WEIGHTS_FILE = "weights.npz"
-PREPROCESSOR_FILE = "preprocessor.joblib"
+PREPROCESSOR_FILE = "preprocessor.json"
+LEGACY_PREPROCESSOR_FILE = "preprocessor.joblib"
 METADATA_FILE = "metadata.json"
 
 ACTIVATIONS = {
@@ -58,6 +63,19 @@ def load_weights(path: Path) -> list[DenseLayer]:
         return [DenseLayer(data[f"W{i}"], data[f"b{i}"], act) for i, act in enumerate(activations)]
 
 
+def save_preprocessor(path: Path, preprocessor: Preprocessor) -> None:
+    path.write_text(json.dumps(preprocessor.to_dict(), indent=2) + "\n")
+
+
+def load_preprocessor(bundle_dir: Path) -> Preprocessor:
+    if (bundle_dir / PREPROCESSOR_FILE).exists():
+        return Preprocessor.from_dict(json.loads((bundle_dir / PREPROCESSOR_FILE).read_text()))
+    # Legacy bundles: unpickling can run arbitrary code, so only load bundles you produced.
+    import joblib
+
+    return joblib.load(bundle_dir / LEGACY_PREPROCESSOR_FILE)
+
+
 class FraudModel:
     """A trained model ready to score raw transactions.
 
@@ -73,15 +91,11 @@ class FraudModel:
 
     @classmethod
     def load(cls, bundle_dir: str | Path) -> "FraudModel":
-        """Load a bundle written by training.
-
-        The preprocessor is stored with joblib, which can run arbitrary code when
-        loading, so only load bundles you produced yourself.
-        """
+        """Load a bundle written by training."""
         bundle_dir = Path(bundle_dir)
         return cls(
             layers=load_weights(bundle_dir / WEIGHTS_FILE),
-            preprocessor=joblib.load(bundle_dir / PREPROCESSOR_FILE),
+            preprocessor=load_preprocessor(bundle_dir),
             metadata=json.loads((bundle_dir / METADATA_FILE).read_text()),
         )
 

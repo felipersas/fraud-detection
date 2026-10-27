@@ -13,8 +13,6 @@ use them, earlier models score each transaction on its own.
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from fraud_core.columns import TARGET, TIME
 from fraud_core.history import HISTORY_COLUMNS
@@ -84,6 +82,10 @@ class Preprocessor:
     - Categorical features are one-hot encoded: "category = travel" becomes a
       column that is 1 for travel purchases and 0 otherwise. Categories never
       seen in train are encoded as all zeros instead of raising an error.
+
+    Both are plain NumPy, matching scikit-learn's StandardScaler and OneHotEncoder
+    exactly, so serving does not need scikit-learn and what was learned can be
+    saved as readable JSON (to_dict / from_dict).
     """
 
     # Class-level default, so preprocessors saved before card history existed still load.
@@ -91,16 +93,19 @@ class Preprocessor:
 
     def __init__(self, card_history: bool = False):
         self.card_history = card_history
-        numeric = NUMERIC + HISTORY_NUMERIC if card_history else NUMERIC
-        self.columns = ColumnTransformer(
-            [
-                ("numeric", StandardScaler(), numeric),
-                ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
-            ]
-        )
+        self.numeric = NUMERIC + HISTORY_NUMERIC if card_history else list(NUMERIC)
+        self.means: np.ndarray | None = None
+        self.scales: np.ndarray | None = None
+        self._categories: dict[str, list[str]] = {}
 
     def fit(self, train_df: pd.DataFrame) -> "Preprocessor":
-        self.columns.fit(make_features(train_df, self.card_history))
+        features = make_features(train_df, self.card_history)
+        values = features[self.numeric].to_numpy(dtype=float)
+        self.means = values.mean(axis=0)
+        std = values.std(axis=0)  # population std (ddof=0), as StandardScaler uses
+        # A constant feature would divide by zero; leaving it unscaled maps it to 0.
+        self.scales = np.where(std == 0, 1.0, std)
+        self._categories = {col: sorted(features[col].astype(str).unique()) for col in CATEGORICAL}
         return self
 
     def transform(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -109,14 +114,59 @@ class Preprocessor:
 
     def transform_features(self, df: pd.DataFrame) -> np.ndarray:
         """Return only X, for transactions whose label is unknown (as in serving)."""
-        return self.columns.transform(make_features(df, self.card_history))
+        if self.means is None:
+            raise RuntimeError("Preprocessor must be fitted before transforming")
+        features = make_features(df, self.card_history)
+        numeric = (features[self.numeric].to_numpy(dtype=float) - self.means) / self.scales
+        one_hot = [
+            (features[col].astype(str).to_numpy()[:, None] == np.array(values)[None, :]).astype(float)
+            for col, values in self._categories.items()
+        ]
+        return np.hstack([numeric, *one_hot])
 
     @property
     def feature_names(self) -> list[str]:
-        return list(self.columns.get_feature_names_out())
+        names = [f"numeric__{name}" for name in self.numeric]
+        return names + [f"categorical__{col}_{v}" for col, values in self._categories.items() for v in values]
 
     @property
     def categories(self) -> dict[str, list[str]]:
         """Values seen in train for each categorical column; anything else is unknown to the model."""
-        encoder = self.columns.named_transformers_["categorical"]
-        return {col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_)}
+        return {col: list(values) for col, values in self._categories.items()}
+
+    def to_dict(self) -> dict:
+        """Everything learned in fit, as plain JSON-serializable values."""
+        return {
+            "card_history": self.card_history,
+            "numeric": self.numeric,
+            "means": self.means.tolist(),
+            "scales": self.scales.tolist(),
+            "categories": self.categories,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Preprocessor":
+        prep = cls(card_history=data["card_history"])
+        prep.numeric = list(data["numeric"])
+        prep.means = np.array(data["means"])
+        prep.scales = np.array(data["scales"])
+        prep._categories = {col: list(values) for col, values in data["categories"].items()}
+        return prep
+
+    def __setstate__(self, state: dict) -> None:
+        """Load preprocessors pickled by bundles 1.0.0 and 2.0.0, which used scikit-learn.
+
+        Unpickling those still needs scikit-learn installed; their fitted
+        statistics are then copied into the NumPy representation.
+        """
+        if "columns" not in state:
+            self.__dict__.update(state)
+            return
+        columns = state["columns"]
+        scaler = columns.named_transformers_["numeric"]
+        encoder = columns.named_transformers_["categorical"]
+        self.card_history = state.get("card_history", False)
+        self.numeric = list(columns.transformers_[0][2])
+        self.means = np.asarray(scaler.mean_)
+        self.scales = np.asarray(scaler.scale_)
+        self._categories = {col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_)}

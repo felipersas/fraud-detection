@@ -5,15 +5,18 @@ description = "Data loading, experiments and training of the fraud detection mod
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fraud-core",
+    "joblib>=1.5",
     "jupyter>=1.1",
     "kaggle>=2.2",
     "matplotlib>=3.11",
+    "scikit-learn>=1.9",
     "tensorflow>=2.21",
 ]
 
 [project.scripts]
 fraud-baselines = "fraud_training.train:main"
 fraud-train = "fraud_training.export:main"
+fraud-repackage = "fraud_training.repackage:main"
 fraud-tune-weight = "fraud_training.tune_fraud_weight:main"
 fraud-tune-training = "fraud_training.tune_training:main"
 fraud-compare-card-history = "fraud_training.compare_card_history:main"

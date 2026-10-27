@@ -3,8 +3,11 @@
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from fraud_core.columns import TIME
+from fraud_core.features import CATEGORICAL, NUMERIC, Preprocessor, make_features
 from fraud_core.model import FraudModel
 from fraud_training.data import split_by_time
 from fraud_training.error_analysis import count_tags
@@ -51,3 +54,16 @@ def test_exported_layers_reproduce_keras():
     X = np.random.default_rng(0).normal(size=(50, 5)).astype("float32")
     numpy_model = FraudModel(keras_to_layers(model), preprocessor=None, metadata={})
     np.testing.assert_allclose(numpy_model.forward(X), model.predict(X, verbose=0).ravel(), atol=1e-6)
+
+
+def test_numpy_preprocessor_matches_scikit_learn(transactions):
+    # The Preprocessor reimplements StandardScaler and OneHotEncoder so serving needs no
+    # scikit-learn; both must produce exactly the same features.
+    prep = Preprocessor().fit(transactions)
+    features = make_features(transactions)
+    reference = ColumnTransformer([
+        ("numeric", StandardScaler(), NUMERIC),
+        ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
+    ]).fit(features)
+    np.testing.assert_array_equal(prep.transform_features(transactions), reference.transform(features))
+    assert prep.feature_names == list(reference.get_feature_names_out())

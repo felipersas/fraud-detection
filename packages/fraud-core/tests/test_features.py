@@ -1,5 +1,7 @@
 """Feature engineering tests on synthetic transactions, so they run without the real download."""
 
+import json
+
 import numpy as np
 import pytest
 
@@ -24,10 +26,9 @@ def test_preprocessor_uses_only_train_stats(train_and_new):
     np.testing.assert_allclose(numeric.mean(axis=0), 0, atol=1e-8)
     np.testing.assert_allclose(numeric.std(axis=0), 1, atol=1e-8)
     # Transforming wildly different new data must not change what was learned.
-    scaler = prep.columns.named_transformers_["numeric"]
-    before = scaler.mean_.copy()
+    before = prep.means.copy()
     prep.transform(new.assign(amt=new["amt"] * 1000))
-    np.testing.assert_array_equal(scaler.mean_, before)
+    np.testing.assert_array_equal(prep.means, before)
 
 
 def test_unseen_category_does_not_break_transform(train_and_new):
@@ -53,3 +54,11 @@ def test_categories_lists_what_train_contained(train_and_new):
     prep = Preprocessor().fit(train)
     assert prep.categories["category"] == sorted(train["category"].unique())
     assert prep.categories["gender"] == ["F", "M"]
+
+
+def test_json_round_trip_gives_identical_features(train_and_new):
+    train, new = train_and_new
+    prep = Preprocessor().fit(train)
+    restored = Preprocessor.from_dict(json.loads(json.dumps(prep.to_dict())))
+    np.testing.assert_array_equal(restored.transform_features(new), prep.transform_features(new))
+    assert restored.feature_names == prep.feature_names

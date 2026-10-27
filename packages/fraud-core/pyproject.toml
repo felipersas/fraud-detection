@@ -4,10 +4,8 @@ version = "0.1.0"
 description = "Feature engineering shared by model training and serving, so both transform transactions identically."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "joblib>=1.5",
     "numpy>=2.5",
     "pandas>=3.1",
-    "scikit-learn>=1.9",
 ]
 
 [build-system]

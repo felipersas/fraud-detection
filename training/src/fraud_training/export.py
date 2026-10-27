@@ -21,18 +21,28 @@ from datetime import UTC, datetime
 from importlib.metadata import version as package_version
 from pathlib import Path
 
-import joblib
 import numpy as np
 
 from fraud_core.columns import TARGET, TIME
 from fraud_core.features import HISTORY_INPUTS, RAW_INPUTS, Preprocessor
 from fraud_core.history import card_history
-from fraud_core.model import METADATA_FILE, PREPROCESSOR_FILE, WEIGHTS_FILE, DenseLayer, FraudModel, save_weights
+from fraud_core.model import (
+    METADATA_FILE,
+    PREPROCESSOR_FILE,
+    WEIGHTS_FILE,
+    DenseLayer,
+    FraudModel,
+    save_preprocessor,
+    save_weights,
+)
 from fraud_training.data import KAGGLE_DATASET, ROOT, load_raw, split_by_time
 from fraud_training.evaluate import FALSE_ALARM_COST, cost_by_threshold, evaluate
 from fraud_training.train import FINAL_PARAMS, train_neural_net
 
 MODELS_DIR = ROOT.parent / "models"
+
+# 2: preprocessor stored as JSON. 1 (bundles 1.0.0 and 2.0.0): pickled scikit-learn objects.
+BUNDLE_FORMAT = 2
 
 # The NumPy forward pass must reproduce Keras up to float32 rounding.
 MAX_PREDICTION_DIFF = 1e-5
@@ -75,7 +85,7 @@ def describe(part) -> dict:
 def export_bundle(out_dir: Path, layers: list[DenseLayer], preprocessor: Preprocessor, metadata: dict) -> None:
     out_dir.mkdir(parents=True)
     save_weights(out_dir / WEIGHTS_FILE, layers)
-    joblib.dump(preprocessor, out_dir / PREPROCESSOR_FILE)
+    save_preprocessor(out_dir / PREPROCESSOR_FILE, preprocessor)
     (out_dir / METADATA_FILE).write_text(json.dumps(metadata, indent=2) + "\n")
 
 
@@ -109,6 +119,7 @@ def main():
 
     metadata = {
         "version": args.version,
+        "bundle_format": BUNDLE_FORMAT,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_commit": git_commit(),
         "dataset": f"kaggle:{KAGGLE_DATASET}",

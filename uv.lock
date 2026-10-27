@@ -442,18 +442,14 @@ name = "fraud-core"
 version = "0.1.0"
 source = { editable = "packages/fraud-core" }
 dependencies = [
-    { name = "joblib" },
     { name = "numpy" },
     { name = "pandas" },
-    { name = "scikit-learn" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "joblib", specifier = ">=1.5" },
     { name = "numpy", specifier = ">=2.5" },
     { name = "pandas", specifier = ">=3.1" },
-    { name = "scikit-learn", specifier = ">=1.9" },
 ]
 
 [[package]]
@@ -491,18 +487,22 @@ version = "0.1.0"
 source = { editable = "training" }
 dependencies = [
     { name = "fraud-core" },
+    { name = "joblib" },
     { name = "jupyter" },
     { name = "kaggle" },
     { name = "matplotlib" },
+    { name = "scikit-learn" },
     { name = "tensorflow" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fraud-core", editable = "packages/fraud-core" },
+    { name = "joblib", specifier = ">=1.5" },
     { name = "jupyter", specifier = ">=1.1" },
     { name = "kaggle", specifier = ">=2.2" },
     { name = "matplotlib", specifier = ">=3.11" },
+    { name = "scikit-learn", specifier = ">=1.9" },
     { name = "tensorflow", specifier = ">=2.21" },
 ]
 
