@@ -5,6 +5,7 @@ description = "Feature engineering shared by model training and serving, so both
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2.5",
+    "onnxruntime>=1.31",
     "pandas>=3.1",
 ]
 

@@ -2,18 +2,22 @@
 
 A bundle is a folder written by the training package (`fraud-train`):
 
-- weights.npz: the weights and bias of every Dense layer, plus each layer's activation
+- model.onnx: the network in ONNX, the standard exchange format for trained models
+- weights.npz: the same network as plain arrays (weights, bias and activation of each layer)
 - preprocessor.json: what the Preprocessor learned on the training set (means, scales, categories)
 - metadata.json: version, training data, cv metrics and the decision threshold
 
-Bundles 1.0.0 and 2.0.0 predate the JSON format and store a pickled,
-scikit-learn based preprocessor.joblib instead. They still load wherever
-scikit-learn and joblib are installed (the training environment); 1.0.1 and
-2.0.1 are the same models repackaged, and they are what the API serves.
+The network runs on ONNX Runtime, a small inference engine that executes any
+exported model without the framework it was trained with. Since a Dense layer
+only computes activation(X @ W + b), the same network can also be evaluated in
+a few lines of NumPy (forward_numpy); training uses that independent
+implementation to cross-check every exported ONNX graph.
 
-The network is evaluated with NumPy instead of TensorFlow. A Dense layer only
-computes activation(X @ W + b), so a small stack of them needs a few lines of
-code, and serving does not have to install TensorFlow at all.
+Older bundles lack some files. 1.0.1 and 2.0.1 have no model.onnx and run on
+NumPy. 1.0.0 and 2.0.0 also store a pickled, scikit-learn based
+preprocessor.joblib, which only loads where scikit-learn and joblib are
+installed (the training environment). 1.0.2 and 2.0.2 are the same models
+with every file, and they are what the API serves.
 """
 
 import json
@@ -21,10 +25,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import onnxruntime as ort
 import pandas as pd
 
 from fraud_core.features import Preprocessor
 
+ONNX_FILE = "model.onnx"
 WEIGHTS_FILE = "weights.npz"
 PREPROCESSOR_FILE = "preprocessor.json"
 LEGACY_PREPROCESSOR_FILE = "preprocessor.joblib"
@@ -77,6 +83,14 @@ def load_preprocessor(bundle_dir: Path) -> Preprocessor:
     return joblib.load(bundle_dir / LEGACY_PREPROCESSOR_FILE)
 
 
+def onnx_session(path: Path) -> ort.InferenceSession:
+    options = ort.SessionOptions()
+    # The network is tiny; one thread per request avoids competing with the web
+    # server's own worker threads for CPU cores.
+    options.intra_op_num_threads = 1
+    return ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
+
+
 class FraudModel:
     """A trained model ready to score raw transactions.
 
@@ -85,19 +99,28 @@ class FraudModel:
     into a decision with the threshold chosen by cost during training.
     """
 
-    def __init__(self, layers: list[DenseLayer], preprocessor: Preprocessor, metadata: dict):
+    def __init__(
+        self,
+        layers: list[DenseLayer],
+        preprocessor: Preprocessor,
+        metadata: dict,
+        session: ort.InferenceSession | None = None,
+    ):
         self.layers = layers
         self.preprocessor = preprocessor
         self.metadata = metadata
+        self.session = session
 
     @classmethod
     def load(cls, bundle_dir: str | Path) -> "FraudModel":
         """Load a bundle written by training."""
         bundle_dir = Path(bundle_dir)
+        onnx_path = bundle_dir / ONNX_FILE
         return cls(
             layers=load_weights(bundle_dir / WEIGHTS_FILE),
             preprocessor=load_preprocessor(bundle_dir),
             metadata=json.loads((bundle_dir / METADATA_FILE).read_text()),
+            session=onnx_session(onnx_path) if onnx_path.exists() else None,
         )
 
     @property
@@ -109,12 +132,24 @@ class FraudModel:
         return self.metadata["threshold"]
 
     @property
+    def runtime(self) -> str:
+        return "onnxruntime" if self.session is not None else "numpy"
+
+    @property
     def uses_card_history(self) -> bool:
         """True when the model needs the card-history columns (fraud_core.history) as input."""
         return self.metadata.get("card_history", False)
 
     def forward(self, X: np.ndarray) -> np.ndarray:
         """Run already-transformed features through the network; returns P(fraud) per row."""
+        if self.session is None:
+            return self.forward_numpy(X)
+        # The graph was exported with float32 inputs, the precision the network was trained in.
+        inputs = {self.session.get_inputs()[0].name: X.astype(np.float32)}
+        return self.session.run(None, inputs)[0].ravel().astype(np.float64)
+
+    def forward_numpy(self, X: np.ndarray) -> np.ndarray:
+        """The same network evaluated layer by layer with NumPy, independent of ONNX."""
         for layer in self.layers:
             X = layer(X)
         return X.ravel()

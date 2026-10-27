@@ -256,6 +256,7 @@ def model_info(request: Request) -> dict:
     return {
         **{k: model.metadata[k] for k in keys},
         "card_history": model.uses_card_history,
+        "runtime": model.runtime,
         "categories": model.preprocessor.categories,
     }
 

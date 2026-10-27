@@ -33,6 +33,10 @@ fraud-training = { workspace = true }
 testpaths = ["api/tests", "packages/fraud-core/tests", "training/tests"]
 # Test files in different packages may share a name; importlib mode keeps them apart.
 addopts = "--import-mode=importlib"
+filterwarnings = [
+    # Raised inside Keras's own ONNX exporter, not by this project's code.
+    "ignore:In the future `np.object`:FutureWarning",
+]
 
 [tool.ruff]
 line-length = 120

@@ -1,12 +1,12 @@
 """Repackage a published model bundle in the current bundle format, without retraining.
 
-    fraud-repackage --from 2.0.0 --to 2.0.1
+    fraud-repackage --from 2.0.1 --to 2.0.2
 
 The new version holds exactly the same weights, threshold and preprocessing
-statistics; only the file format changes (bundles 1.0.0 and 2.0.0 pickled
-scikit-learn objects, newer ones store the preprocessor as JSON). That is a
-patch release: nothing about the model's behaviour changes, which this
-command checks on the full cv set before publishing.
+statistics; only the file format changes (see BUNDLE_FORMAT in export.py).
+That is a patch release: nothing about the model's behaviour changes, which
+this command checks on the full cv set before publishing, down to every
+single decision.
 """
 
 import argparse
@@ -19,16 +19,16 @@ import numpy as np
 from fraud_core.history import card_history
 from fraud_core.model import FraudModel
 from fraud_training.data import load_raw, split_by_time
-from fraud_training.export import BUNDLE_FORMAT, MODELS_DIR, export_bundle, git_commit
+from fraud_training.export import BUNDLE_FORMAT, MODELS_DIR, export_bundle, git_commit, layers_to_keras
 
-# Same model, same arithmetic: predictions must agree to floating-point rounding.
-MAX_PREDICTION_DIFF = 1e-9
+# Same model; a different runtime may round in float32 instead of float64.
+MAX_PREDICTION_DIFF = 1e-5
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--from", dest="source", required=True, help="published version to repackage, e.g. 2.0.0")
-    parser.add_argument("--to", dest="target", required=True, help="new patch version, e.g. 2.0.1")
+    parser.add_argument("--from", dest="source", required=True, help="published version to repackage, e.g. 2.0.1")
+    parser.add_argument("--to", dest="target", required=True, help="new patch version, e.g. 2.0.2")
     args = parser.parse_args()
 
     out_dir = MODELS_DIR / args.target
@@ -49,20 +49,25 @@ def main():
 
     staging = out_dir.with_name(f".{args.target}.partial")
     shutil.rmtree(staging, ignore_errors=True)
-    export_bundle(staging, old.layers, old.preprocessor, metadata)
+    export_bundle(staging, layers_to_keras(old.layers), old.preprocessor, metadata)
 
     # Score the whole cv set with both bundles; the new one must behave identically.
     df = load_raw()
     if old.uses_card_history:
         df = df.join(card_history(df))
     cv = split_by_time(df).cv
-    diff = float(np.abs(FraudModel.load(staging).predict_proba(cv) - old.predict_proba(cv)).max())
-    if diff > MAX_PREDICTION_DIFF:
-        raise RuntimeError(f"repackaged predictions differ by {diff:.2e}; left unpublished in {staging}")
+    new = FraudModel.load(staging)
+    old_prob, new_prob = old.predict_proba(cv), new.predict_proba(cv)
+    diff = float(np.abs(new_prob - old_prob).max())
+    changed = int(((new_prob >= new.threshold) != (old_prob >= old.threshold)).sum())
+    if diff > MAX_PREDICTION_DIFF or changed:
+        raise RuntimeError(
+            f"repackaged model differs (max {diff:.2e}, {changed} decisions changed); left unpublished in {staging}"
+        )
     staging.rename(out_dir)
 
-    print(f"Repackaged {args.source} as {args.target} in {out_dir}")
-    print(f"  identical on cv (max difference {diff:.1e})")
+    print(f"Repackaged {args.source} as {args.target} in {out_dir} (runtime: {new.runtime})")
+    print(f"  same decision on all {len(cv)} cv transactions (max probability difference {diff:.1e})")
     print(json.dumps({k: metadata[k] for k in ["version", "bundle_format", "threshold"]}))
 
 

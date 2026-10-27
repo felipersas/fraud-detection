@@ -8,11 +8,11 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from fraud_core.columns import TIME
 from fraud_core.features import CATEGORICAL, NUMERIC, Preprocessor, make_features
-from fraud_core.model import FraudModel
+from fraud_core.model import FraudModel, onnx_session
 from fraud_training.data import split_by_time
 from fraud_training.error_analysis import count_tags
 from fraud_training.evaluate import cost_by_threshold, evaluate
-from fraud_training.export import keras_to_layers
+from fraud_training.export import export_onnx, keras_to_layers, layers_to_keras
 from fraud_training.train import build_neural_net
 
 
@@ -69,3 +69,21 @@ def test_numpy_preprocessor_matches_scikit_learn(transactions):
     ).fit(features)
     np.testing.assert_array_equal(prep.transform_features(transactions), reference.transform(features))
     assert prep.feature_names == list(reference.get_feature_names_out())
+
+
+def test_onnx_export_reproduces_keras_and_numpy(tmp_path):
+    model = build_neural_net(n_features=5)
+    export_onnx(model, tmp_path / "model.onnx")
+    X = np.random.default_rng(0).normal(size=(50, 5)).astype("float32")
+    onnx_model = FraudModel(
+        keras_to_layers(model), preprocessor=None, metadata={}, session=onnx_session(tmp_path / "model.onnx")
+    )
+    np.testing.assert_allclose(onnx_model.forward(X), model.predict(X, verbose=0).ravel(), atol=1e-6)
+    np.testing.assert_allclose(onnx_model.forward(X), onnx_model.forward_numpy(X), atol=1e-6)
+
+
+def test_layers_rebuild_the_same_keras_network():
+    model = build_neural_net(n_features=5)
+    rebuilt = layers_to_keras(keras_to_layers(model))
+    X = np.random.default_rng(1).normal(size=(20, 5)).astype("float32")
+    np.testing.assert_array_equal(rebuilt.predict(X, verbose=0), model.predict(X, verbose=0))
