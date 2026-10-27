@@ -26,7 +26,6 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-
 # Assumed cost of flagging a legit purchase (support call, blocked card, annoyed
 # customer). It is a business assumption, not something learned from data;
 # notebooks/04_threshold.ipynb shows how the chosen threshold moves with it.
@@ -110,12 +109,14 @@ def cost_by_threshold(
         false_alarms = (y_true == 0) & flagged
         missed_cost = amounts[missed].sum()
         false_alarm_total = false_alarm_cost * false_alarms.sum()
-        rows.append({
-            "threshold": t,
-            "missed_frauds": int(missed.sum()),
-            "false_alarms": int(false_alarms.sum()),
-            "missed_fraud_cost": missed_cost,
-            "false_alarm_cost": false_alarm_total,
-            "total_cost": missed_cost + false_alarm_total,
-        })
+        rows.append(
+            {
+                "threshold": t,
+                "missed_frauds": int(missed.sum()),
+                "false_alarms": int(false_alarms.sum()),
+                "missed_fraud_cost": missed_cost,
+                "false_alarm_cost": false_alarm_total,
+                "total_cost": missed_cost + false_alarm_total,
+            }
+        )
     return pd.DataFrame(rows).set_index("threshold")

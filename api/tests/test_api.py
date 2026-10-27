@@ -15,9 +15,19 @@ MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 V1, V2 = "1.0.1", "2.0.1"
 
 # Same customer as the example, but a small daytime purchase in a low-risk store.
-CALM_TRANSACTION = {**EXAMPLE_TRANSACTION, "transaction_time": "2020-06-17T14:10:00", "amount": 25.0, "category": "food_dining"}
+CALM_TRANSACTION = {
+    **EXAMPLE_TRANSACTION,
+    "transaction_time": "2020-06-17T14:10:00",
+    "amount": 25.0,
+    "category": "food_dining",
+}
 # A small night purchase, the kind fraudsters mix into a burst.
-SMALL_NIGHT_PURCHASE = {**EXAMPLE_TRANSACTION, "transaction_time": "2020-06-17T02:10:00", "amount": 18.0, "category": "personal_care"}
+SMALL_NIGHT_PURCHASE = {
+    **EXAMPLE_TRANSACTION,
+    "transaction_time": "2020-06-17T02:10:00",
+    "amount": 18.0,
+    "category": "personal_care",
+}
 
 
 @contextmanager

@@ -10,13 +10,12 @@ fixed, so any difference in the results comes from the weight alone.
     fraud-tune-weight
 """
 
-import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from fraud_core.features import Preprocessor
 from fraud_training.data import ROOT, load_raw, split_by_time
 from fraud_training.evaluate import evaluate
-from fraud_core.features import Preprocessor
 from fraud_training.train import build_neural_net
 
 # 176 is the class ratio in train (legit / fraud); 1 means no weighting at all.
@@ -32,9 +31,12 @@ def run_one(X_train, y_train, X_cv, y_cv, fraud_weight: float, seed: int) -> dic
     tf.keras.utils.set_random_seed(seed)  # seeds Python, NumPy and TensorFlow together
     model = build_neural_net(n_features=X_train.shape[1])
     model.fit(
-        X_train, y_train,
+        X_train,
+        y_train,
         class_weight={0: 1, 1: fraud_weight},
-        epochs=EPOCHS, batch_size=BATCH_SIZE, verbose=0,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        verbose=0,
     )
     y_prob = model.predict(X_cv, batch_size=4096, verbose=0).ravel()
     y_pred = y_prob >= 0.5
@@ -64,11 +66,15 @@ def main():
             # Save after every run so a long search can be inspected (or resumed) midway.
             pd.DataFrame(rows).to_csv(RESULTS_PATH, index=False)
 
-    summary = pd.DataFrame(rows).groupby("fraud_weight").agg(
-        pr_auc_mean=("pr_auc", "mean"),
-        pr_auc_std=("pr_auc", "std"),
-        missed_frauds=("missed_frauds", "mean"),
-        false_alarms=("false_alarms", "mean"),
+    summary = (
+        pd.DataFrame(rows)
+        .groupby("fraud_weight")
+        .agg(
+            pr_auc_mean=("pr_auc", "mean"),
+            pr_auc_std=("pr_auc", "std"),
+            missed_frauds=("missed_frauds", "mean"),
+            false_alarms=("false_alarms", "mean"),
+        )
     )
     print(summary.round(3))
 

@@ -10,10 +10,9 @@ import tensorflow as tf
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 
+from fraud_core.features import Preprocessor
 from fraud_training.data import load_raw, split_by_time
 from fraud_training.evaluate import confusion, evaluate, results_table
-from fraud_core.features import Preprocessor
-
 
 # Final training setup, chosen on cv by src/tune_fraud_weight.py and src/tune_training.py.
 FINAL_PARAMS = {
@@ -59,16 +58,18 @@ def build_neural_net(n_features: int, learning_rate: float = 1e-4):
     at this size J_train and J_cv stay together, with no sign of overfitting.
     """
     reg = tf.keras.regularizers.L2(0.001)
-    model = tf.keras.Sequential([
-        tf.keras.Input(shape=(n_features,)),
-        tf.keras.layers.Dense(8, activation="relu", kernel_regularizer=reg),
-        tf.keras.layers.Dense(4, activation="relu", kernel_regularizer=reg),
-        tf.keras.layers.Dense(1, activation="sigmoid")
-    ])
+    model = tf.keras.Sequential(
+        [
+            tf.keras.Input(shape=(n_features,)),
+            tf.keras.layers.Dense(8, activation="relu", kernel_regularizer=reg),
+            tf.keras.layers.Dense(4, activation="relu", kernel_regularizer=reg),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ]
+    )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss=tf.keras.losses.BinaryCrossentropy(),
-        metrics=[tf.keras.metrics.AUC(curve="PR", name="pr_auc")]
+        metrics=[tf.keras.metrics.AUC(curve="PR", name="pr_auc")],
     )
     return model
 
@@ -104,7 +105,8 @@ def train_neural_net(
             tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=patience, restore_best_weights=True)
         )
     history = model.fit(
-        X_train, y_train,
+        X_train,
+        y_train,
         validation_data=(X_cv, y_cv, np.where(y_cv == 1, fraud_weight, 1.0)),
         class_weight={0: 1, 1: fraud_weight},
         epochs=max_epochs,

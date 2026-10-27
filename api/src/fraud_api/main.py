@@ -29,10 +29,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from fraud_api.history_store import RedisCardHistoryStore
 from fraud_core.columns import TIME
 from fraud_core.history import CardHistoryStore
 from fraud_core.model import PREPROCESSOR_FILE, FraudModel
-from fraud_api.history_store import RedisCardHistoryStore
 
 logger = logging.getLogger("fraud_api")
 

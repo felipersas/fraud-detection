@@ -11,7 +11,10 @@ dependencies = ["fraud-api", "fraud-core", "fraud-training"]
 dev = [
     "fakeredis[lua]>=2.40.0",
     "httpx2>=2.16.0",
+    "mypy>=2.4.0",
+    "pandas-stubs>=3.0.5.260914",
     "pytest>=9.1",
+    "ruff>=0.17.2",
 ]
 
 [tool.uv]
@@ -30,3 +33,20 @@ fraud-training = { workspace = true }
 testpaths = ["api/tests", "packages/fraud-core/tests", "training/tests"]
 # Test files in different packages may share a name; importlib mode keeps them apart.
 addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+# Notebooks are documents with outputs; reformatting them would churn every cell.
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import sorting, modern syntax, likely bugs.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fraud_api", "fraud_core", "fraud_training"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true

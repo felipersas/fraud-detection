@@ -19,9 +19,9 @@ import time
 import numpy as np
 import pandas as pd
 
+from fraud_core.features import Preprocessor
 from fraud_training.data import ROOT, load_raw, split_by_time
 from fraud_training.evaluate import evaluate
-from fraud_core.features import Preprocessor
 from fraud_training.train import train_neural_net
 
 FRAUD_WEIGHT = 10
@@ -48,24 +48,30 @@ def main():
             model, history = train_neural_net(X_train, y_train, X_cv, y_cv, FRAUD_WEIGHT, seed=seed, **setup)
             y_prob = model.predict(X_cv, batch_size=4096, verbose=0).ravel()
             val_loss = history.history["val_loss"]
-            rows.append({
-                "setup": name,
-                "seed": seed,
-                "pr_auc": evaluate(y_cv, y_prob)["pr_auc"],
-                "epochs_run": len(val_loss),
-                # With early stopping, the weights kept are those of the best epoch.
-                "best_epoch": int(np.argmin(val_loss)) + 1,
-                "minutes": (time.time() - start) / 60,
-            })
+            rows.append(
+                {
+                    "setup": name,
+                    "seed": seed,
+                    "pr_auc": evaluate(y_cv, y_prob)["pr_auc"],
+                    "epochs_run": len(val_loss),
+                    # With early stopping, the weights kept are those of the best epoch.
+                    "best_epoch": int(np.argmin(val_loss)) + 1,
+                    "minutes": (time.time() - start) / 60,
+                }
+            )
             print(rows[-1], flush=True)
             # Save after every run so a long search can be inspected midway.
             pd.DataFrame(rows).to_csv(RESULTS_PATH, index=False)
 
-    summary = pd.DataFrame(rows).groupby("setup", sort=False).agg(
-        pr_auc_mean=("pr_auc", "mean"),
-        pr_auc_std=("pr_auc", "std"),
-        best_epoch=("best_epoch", "mean"),
-        minutes=("minutes", "mean"),
+    summary = (
+        pd.DataFrame(rows)
+        .groupby("setup", sort=False)
+        .agg(
+            pr_auc_mean=("pr_auc", "mean"),
+            pr_auc_std=("pr_auc", "std"),
+            best_epoch=("best_epoch", "mean"),
+            minutes=("minutes", "mean"),
+        )
     )
     print(summary.round(3))
 

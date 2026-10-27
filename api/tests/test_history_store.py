@@ -16,7 +16,12 @@ from fraud_core.columns import CARD, TIME
 from fraud_core.history import HISTORY_COLUMNS, card_history
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-SMALL_NIGHT_PURCHASE = {**EXAMPLE_TRANSACTION, "transaction_time": "2020-06-17T02:10:00", "amount": 18.0, "category": "personal_care"}
+SMALL_NIGHT_PURCHASE = {
+    **EXAMPLE_TRANSACTION,
+    "transaction_time": "2020-06-17T02:10:00",
+    "amount": 18.0,
+    "category": "personal_care",
+}
 BURST = [("2020-06-17T00:33:41", 1167.06), ("2020-06-17T00:56:36", 369.32)]
 
 
@@ -30,11 +35,13 @@ def test_redis_store_matches_batch_computation(server):
     n = 300
     # Whole seconds, like the real data (Python datetimes cannot hold nanoseconds).
     start = pd.Timestamp("2020-01-01")
-    df = pd.DataFrame({
-        TIME: start + pd.to_timedelta(np.sort(rng.integers(0, 10 * 86_400, n)), unit="s"),
-        CARD: rng.choice([11, 22, 33], n),
-        "amt": rng.choice([5.0, 50.0, 250.0, 900.0], n),
-    })
+    df = pd.DataFrame(
+        {
+            TIME: start + pd.to_timedelta(np.sort(rng.integers(0, 10 * 86_400, n)), unit="s"),
+            CARD: rng.choice([11, 22, 33], n),
+            "amt": rng.choice([5.0, 50.0, 250.0, 900.0], n),
+        }
+    )
     store = RedisCardHistoryStore(fakeredis.FakeRedis(server=server))
     served = []
     for row in df.itertuples(index=False):
@@ -60,7 +67,9 @@ def test_history_survives_an_api_restart(monkeypatch, server):
         assert client.get("/health").json()["card_history_store"] == "redis"
         fresh = client.post("/predict", json={**SMALL_NIGHT_PURCHASE, "card_id": "quiet"}).json()
         for time, amount in BURST:
-            client.post("/predict", json={**EXAMPLE_TRANSACTION, "transaction_time": time, "amount": amount, "card_id": "burst"})
+            client.post(
+                "/predict", json={**EXAMPLE_TRANSACTION, "transaction_time": time, "amount": amount, "card_id": "burst"}
+            )
     # A brand-new instance, as after a restart or on another replica, sharing the same Redis.
     with serving_with_redis(monkeypatch, server) as client:
         after_restart = client.post("/predict", json={**SMALL_NIGHT_PURCHASE, "card_id": "burst"}).json()

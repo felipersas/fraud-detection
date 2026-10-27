@@ -28,7 +28,6 @@ def count_tags(sample: pd.DataFrame, tags: dict[str, pd.Series]) -> pd.DataFrame
     so the shares can add up to more than 100%.
     """
     counts = pd.Series({name: int(mask.loc[sample.index].sum()) for name, mask in tags.items()})
-    return (
-        pd.DataFrame({"errors": counts, "share_%": (100 * counts / len(sample)).round(1)})
-        .sort_values("errors", ascending=False)
+    return pd.DataFrame({"errors": counts, "share_%": (100 * counts / len(sample)).round(1)}).sort_values(
+        "errors", ascending=False
     )

@@ -69,8 +69,9 @@ class RedisCardHistoryStore:
         """
         with ExitStack() as stack:
             for card in sorted(set(cards)):
-                lock = self.client.lock(f"lock:{self._key(card)}", timeout=LOCK_TIMEOUT_SECONDS,
-                                        blocking_timeout=LOCK_TIMEOUT_SECONDS)
+                lock = self.client.lock(
+                    f"lock:{self._key(card)}", timeout=LOCK_TIMEOUT_SECONDS, blocking_timeout=LOCK_TIMEOUT_SECONDS
+                )
                 stack.enter_context(lock)
             yield
 

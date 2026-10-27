@@ -61,9 +61,11 @@ def test_numpy_preprocessor_matches_scikit_learn(transactions):
     # scikit-learn; both must produce exactly the same features.
     prep = Preprocessor().fit(transactions)
     features = make_features(transactions)
-    reference = ColumnTransformer([
-        ("numeric", StandardScaler(), NUMERIC),
-        ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
-    ]).fit(features)
+    reference = ColumnTransformer(
+        [
+            ("numeric", StandardScaler(), NUMERIC),
+            ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
+        ]
+    ).fit(features)
     np.testing.assert_array_equal(prep.transform_features(transactions), reference.transform(features))
     assert prep.feature_names == list(reference.get_feature_names_out())

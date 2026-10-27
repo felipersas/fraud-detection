@@ -163,8 +163,10 @@ def main():
     staging.rename(out_dir)
 
     print(f"Exported model {args.version} to {out_dir}")
-    print(f"  threshold {threshold} | cv PR-AUC {metadata['cv_metrics']['pr_auc']} | "
-          f"precision {metadata['cv_metrics']['precision']} | recall {metadata['cv_metrics']['recall']}")
+    print(
+        f"  threshold {threshold} | cv PR-AUC {metadata['cv_metrics']['pr_auc']} | "
+        f"precision {metadata['cv_metrics']['precision']} | recall {metadata['cv_metrics']['recall']}"
+    )
     print(f"  bundle matches Keras on cv (max difference {diff:.1e})")
 
 

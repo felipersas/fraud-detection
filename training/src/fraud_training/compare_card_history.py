@@ -36,23 +36,27 @@ def main():
             y_prob = model.predict(X_cv, batch_size=4096, verbose=0).ravel()
             costs = cost_by_threshold(y_cv, y_prob, amounts, false_alarm_cost=FALSE_ALARM_COST)
             threshold = costs["total_cost"].idxmin()
-            rows.append({
-                "features": "transaction + card history" if use_history else "transaction only",
-                "seed": seed,
-                "pr_auc": evaluate(y_cv, y_prob)["pr_auc"],
-                "epochs_run": len(history.history["val_loss"]),
-                "threshold": threshold,
-                "missed_frauds": int(costs.loc[threshold, "missed_frauds"]),
-                "false_alarms": int(costs.loc[threshold, "false_alarms"]),
-                "total_cost": float(costs.loc[threshold, "total_cost"]),
-            })
+            rows.append(
+                {
+                    "features": "transaction + card history" if use_history else "transaction only",
+                    "seed": seed,
+                    "pr_auc": evaluate(y_cv, y_prob)["pr_auc"],
+                    "epochs_run": len(history.history["val_loss"]),
+                    "threshold": threshold,
+                    "missed_frauds": int(costs.loc[threshold, "missed_frauds"]),
+                    "false_alarms": int(costs.loc[threshold, "false_alarms"]),
+                    "total_cost": float(costs.loc[threshold, "total_cost"]),
+                }
+            )
             print(rows[-1], flush=True)
             # Save after every run so a long comparison can be inspected midway.
             pd.DataFrame(rows).to_csv(RESULTS_PATH, index=False)
 
-    summary = pd.DataFrame(rows).groupby("features", sort=False)[
-        ["pr_auc", "missed_frauds", "false_alarms", "total_cost"]
-    ].agg(["mean", "std"])
+    summary = (
+        pd.DataFrame(rows)
+        .groupby("features", sort=False)[["pr_auc", "missed_frauds", "false_alarms", "total_cost"]]
+        .agg(["mean", "std"])
+    )
     print(summary.round(3))
 
 
