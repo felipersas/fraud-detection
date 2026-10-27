@@ -3,7 +3,6 @@
 from contextlib import contextmanager
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -68,15 +67,6 @@ def without_card(transaction: dict) -> dict:
 # Behaviour shared by every model version
 
 
-def test_legacy_bundles_are_not_served(monkeypatch):
-    # 2.0.0 pickles scikit-learn objects; the API points to its repackaged version instead.
-    monkeypatch.setenv("FRAUD_MODELS_DIR", str(MODELS_DIR))
-    monkeypatch.setenv("FRAUD_MODEL_VERSION", "2.0.0")
-    with pytest.raises(RuntimeError, match="legacy format"):
-        with TestClient(app):
-            pass
-
-
 def test_serves_the_highest_version_by_default(client):
     highest = find_bundle(MODELS_DIR, version=None).name
     assert client.get("/health").json() == {"status": "ok", "model_version": highest, "card_history_store": "memory"}
@@ -85,16 +75,7 @@ def test_serves_the_highest_version_by_default(client):
 @pytest.mark.parametrize("version", [V1, V2])
 def test_serves_the_requested_version(monkeypatch, version):
     with serving(monkeypatch, version) as client:
-        info = client.get("/model").json()
-    assert info["version"] == version
-    assert info["runtime"] == "onnxruntime"
-
-
-def test_onnx_graph_matches_the_numpy_network():
-    # Two independent implementations of the same network must agree.
-    bundle = FraudModel.load(MODELS_DIR / V2)
-    X = np.random.default_rng(0).normal(size=(500, bundle.layers[0].W.shape[0]))
-    np.testing.assert_allclose(bundle.forward(X), bundle.forward_numpy(X), atol=1e-5)
+        assert client.get("/model").json()["version"] == version
 
 
 def test_unknown_category_is_rejected(client):

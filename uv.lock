@@ -561,7 +561,6 @@ version = "0.1.0"
 source = { editable = "training" }
 dependencies = [
     { name = "fraud-core" },
-    { name = "joblib" },
     { name = "jupyter" },
     { name = "kaggle" },
     { name = "matplotlib" },
@@ -574,7 +573,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fraud-core", editable = "packages/fraud-core" },
-    { name = "joblib", specifier = ">=1.5" },
     { name = "jupyter", specifier = ">=1.1" },
     { name = "kaggle", specifier = ">=2.2" },
     { name = "matplotlib", specifier = ">=3.11" },

@@ -1,32 +1,30 @@
-"""Tests for loading a model bundle and running the network with NumPy."""
+"""Tests for loading a model bundle and running its ONNX network."""
+
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from fraud_core.model import DenseLayer, FraudModel, load_weights, save_weights
+from fraud_core.model import FraudModel
+
+MODELS_DIR = Path(__file__).resolve().parents[3] / "models"
 
 
-@pytest.fixture
-def layers():
-    rng = np.random.default_rng(0)
-    return [
-        DenseLayer(rng.normal(size=(3, 4)), rng.normal(size=4), "relu"),
-        DenseLayer(rng.normal(size=(4, 1)), rng.normal(size=1), "sigmoid"),
-    ]
+@pytest.fixture(scope="module")
+def model():
+    return FraudModel.load(MODELS_DIR / "2.0.2")
 
 
-def test_forward_pass_matches_the_math(layers):
-    X = np.array([[0.5, -1.0, 2.0], [0.0, 0.0, 0.0]])
-    hidden = np.maximum(X @ layers[0].W + layers[0].b, 0)
-    expected = 1 / (1 + np.exp(-(hidden @ layers[1].W + layers[1].b)))
-    model = FraudModel(layers, preprocessor=None, metadata={})
-    np.testing.assert_allclose(model.forward(X), expected.ravel())
+def test_bundle_describes_itself(model):
+    assert model.version == "2.0.2"
+    assert model.uses_card_history
+    assert 0 < model.threshold < 1
+    # 22 per-transaction features plus 5 card-history features.
+    assert model.n_features == len(model.preprocessor.feature_names) == 27
 
 
-def test_weights_survive_a_save_and_load(layers, tmp_path):
-    save_weights(tmp_path / "weights.npz", layers)
-    loaded = load_weights(tmp_path / "weights.npz")
-    assert [layer.activation for layer in loaded] == ["relu", "sigmoid"]
-    for original, restored in zip(layers, loaded, strict=True):
-        np.testing.assert_array_equal(original.W, restored.W)
-        np.testing.assert_array_equal(original.b, restored.b)
+def test_network_returns_one_probability_per_row(model):
+    X = np.random.default_rng(0).normal(size=(100, model.n_features))
+    p = model.forward(X)
+    assert p.shape == (100,)
+    assert ((p >= 0) & (p <= 1)).all()

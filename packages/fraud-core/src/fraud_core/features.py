@@ -88,9 +88,6 @@ class Preprocessor:
     saved as readable JSON (to_dict / from_dict).
     """
 
-    # Class-level default, so preprocessors saved before card history existed still load.
-    card_history = False
-
     def __init__(self, card_history: bool = False):
         self.card_history = card_history
         self.numeric = NUMERIC + HISTORY_NUMERIC if card_history else list(NUMERIC)
@@ -156,23 +153,3 @@ class Preprocessor:
         prep.scales = np.array(data["scales"])
         prep._categories = {col: list(values) for col, values in data["categories"].items()}
         return prep
-
-    def __setstate__(self, state: dict) -> None:
-        """Load preprocessors pickled by bundles 1.0.0 and 2.0.0, which used scikit-learn.
-
-        Unpickling those still needs scikit-learn installed; their fitted
-        statistics are then copied into the NumPy representation.
-        """
-        if "columns" not in state:
-            self.__dict__.update(state)
-            return
-        columns = state["columns"]
-        scaler = columns.named_transformers_["numeric"]
-        encoder = columns.named_transformers_["categorical"]
-        self.card_history = state.get("card_history", False)
-        self.numeric = list(columns.transformers_[0][2])
-        self.means = np.asarray(scaler.mean_)
-        self.scales = np.asarray(scaler.scale_)
-        self._categories = {
-            col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_, strict=True)
-        }

@@ -3,9 +3,8 @@
     fraud-train --version 1.0.0                    # scores each purchase on its own
     fraud-train --version 2.0.0 --card-history     # also uses the card's recent history
 
-The bundle (see fraud_core.model) holds the network as an ONNX graph and as
-plain arrays, the fitted preprocessor and a metadata file describing how the
-model was built. A
+The bundle (see fraud_core.model) holds the network as an ONNX graph, the
+fitted preprocessor and a metadata file describing how the model was built. A
 version is never overwritten: retraining means publishing a new version, so
 any prediction can be traced back to the exact model that produced it.
 
@@ -32,11 +31,8 @@ from fraud_core.model import (
     METADATA_FILE,
     ONNX_FILE,
     PREPROCESSOR_FILE,
-    WEIGHTS_FILE,
-    DenseLayer,
     FraudModel,
     save_preprocessor,
-    save_weights,
 )
 from fraud_training.data import KAGGLE_DATASET, ROOT, load_raw, split_by_time
 from fraud_training.evaluate import FALSE_ALARM_COST, cost_by_threshold, evaluate
@@ -44,31 +40,12 @@ from fraud_training.train import FINAL_PARAMS, train_neural_net
 
 MODELS_DIR = ROOT.parent / "models"
 
-# 3: adds the network as model.onnx. 2: preprocessor stored as JSON.
-# 1 (bundles 1.0.0 and 2.0.0): pickled scikit-learn objects.
+# 3: the network as model.onnx and the preprocessor as JSON. Formats 1 and 2
+# (pickled scikit-learn objects, then NumPy weights) were retired.
 BUNDLE_FORMAT = 3
 
-# The NumPy forward pass must reproduce Keras up to float32 rounding.
+# ONNX Runtime must reproduce Keras up to float32 rounding.
 MAX_PREDICTION_DIFF = 1e-5
-
-
-def keras_to_layers(model) -> list[DenseLayer]:
-    """Extract the weights and activation of every Dense layer of a Keras model."""
-    layers = []
-    for layer in model.layers:
-        W, b = layer.get_weights()
-        layers.append(DenseLayer(W=W, b=b, activation=layer.get_config()["activation"]))
-    return layers
-
-
-def layers_to_keras(layers: list[DenseLayer]) -> tf.keras.Model:
-    """Rebuild a Keras network from exported layers, e.g. to convert an older bundle to ONNX."""
-    model = tf.keras.Sequential(
-        [tf.keras.Input(shape=(layers[0].W.shape[0],))]
-        + [tf.keras.layers.Dense(layer.W.shape[1], activation=layer.activation) for layer in layers]
-    )
-    model.set_weights([array for layer in layers for array in (layer.W, layer.b)])
-    return model
 
 
 def export_onnx(model: tf.keras.Model, path: Path) -> None:
@@ -106,7 +83,6 @@ def describe(part) -> dict:
 def export_bundle(out_dir: Path, model: tf.keras.Model, preprocessor: Preprocessor, metadata: dict) -> None:
     out_dir.mkdir(parents=True)
     export_onnx(model, out_dir / ONNX_FILE)
-    save_weights(out_dir / WEIGHTS_FILE, keras_to_layers(model))
     save_preprocessor(out_dir / PREPROCESSOR_FILE, preprocessor)
     (out_dir / METADATA_FILE).write_text(json.dumps(metadata, indent=2) + "\n")
 
@@ -177,15 +153,11 @@ def main():
     shutil.rmtree(staging, ignore_errors=True)
     export_bundle(staging, model, prep, metadata)
 
-    # Reload the bundle exactly as serving will, and check that its ONNX graph agrees
-    # with Keras and with the independent NumPy implementation of the same network.
-    bundle = FraudModel.load(staging)
-    served = bundle.predict_proba(split.cv)
-    numpy_prob = bundle.forward_numpy(bundle.preprocessor.transform_features(split.cv))
-    for name, reference in [("Keras", cv_prob), ("NumPy", numpy_prob)]:
-        diff = float(np.abs(served - reference).max())
-        if diff > MAX_PREDICTION_DIFF:
-            raise RuntimeError(f"ONNX predictions differ from {name} by {diff:.2e}; left unpublished in {staging}")
+    # Reload the bundle exactly as serving will, and check that its ONNX graph reproduces Keras.
+    served = FraudModel.load(staging).predict_proba(split.cv)
+    diff = float(np.abs(served - cv_prob).max())
+    if diff > MAX_PREDICTION_DIFF:
+        raise RuntimeError(f"ONNX predictions differ from Keras by {diff:.2e}; left unpublished in {staging}")
     staging.rename(out_dir)
 
     print(f"Exported model {args.version} to {out_dir}")
@@ -193,7 +165,7 @@ def main():
         f"  threshold {threshold} | cv PR-AUC {metadata['cv_metrics']['pr_auc']} | "
         f"precision {metadata['cv_metrics']['precision']} | recall {metadata['cv_metrics']['recall']}"
     )
-    print(f"  ONNX graph matches Keras and NumPy on cv (max difference {diff:.1e})")
+    print(f"  ONNX graph matches Keras on cv (max difference {diff:.1e})")
 
 
 if __name__ == "__main__":

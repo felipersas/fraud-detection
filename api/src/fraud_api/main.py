@@ -33,7 +33,7 @@ from pydantic.json_schema import JsonDict
 from fraud_api.history_store import RedisCardHistoryStore
 from fraud_core.columns import TIME
 from fraud_core.history import CardHistoryStore
-from fraud_core.model import PREPROCESSOR_FILE, FraudModel
+from fraud_core.model import ONNX_FILE, FraudModel
 
 logger = logging.getLogger("fraud_api")
 
@@ -99,8 +99,8 @@ class BatchPrediction(BaseModel):
 
 
 def servable(bundle: Path) -> bool:
-    """Whether a bundle can be served: bundles 1.0.0 and 2.0.0 use the legacy pickled format."""
-    return (bundle / PREPROCESSOR_FILE).exists()
+    """Whether a folder holds a complete bundle, with its network exported to ONNX."""
+    return (bundle / ONNX_FILE).exists()
 
 
 def find_bundle(models_dir: Path, version: str | None) -> Path:
@@ -108,9 +108,7 @@ def find_bundle(models_dir: Path, version: str | None) -> Path:
     if version:
         bundle = models_dir / version
         if not servable(bundle):
-            raise RuntimeError(
-                f"bundle {version} is missing or uses the legacy format; serve its repackaged patch version instead"
-            )
+            raise RuntimeError(f"no ONNX model bundle for version {version} in {models_dir}")
         return bundle
     # Folders like ".1.1.0.partial" are unfinished exports and must never be served.
     versions = [p for p in models_dir.iterdir() if p.is_dir() and not p.name.startswith(".") and servable(p)]
@@ -256,7 +254,6 @@ def model_info(request: Request) -> dict:
     return {
         **{k: model.metadata[k] for k in keys},
         "card_history": model.uses_card_history,
-        "runtime": model.runtime,
         "categories": model.preprocessor.categories,
     }
 

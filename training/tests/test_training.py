@@ -12,7 +12,7 @@ from fraud_core.model import FraudModel, onnx_session
 from fraud_training.data import split_by_time
 from fraud_training.error_analysis import count_tags
 from fraud_training.evaluate import cost_by_threshold, evaluate
-from fraud_training.export import export_onnx, keras_to_layers, layers_to_keras
+from fraud_training.export import export_onnx
 from fraud_training.train import build_neural_net
 
 
@@ -48,14 +48,6 @@ def test_cost_by_threshold_prices_each_error_type():
     assert row["total_cost"] == pytest.approx(30 + 10)
 
 
-def test_exported_layers_reproduce_keras():
-    # An untrained network is enough: the point is that NumPy and Keras compute the same thing.
-    model = build_neural_net(n_features=5)
-    X = np.random.default_rng(0).normal(size=(50, 5)).astype("float32")
-    numpy_model = FraudModel(keras_to_layers(model), preprocessor=None, metadata={})
-    np.testing.assert_allclose(numpy_model.forward(X), model.predict(X, verbose=0).ravel(), atol=1e-6)
-
-
 def test_numpy_preprocessor_matches_scikit_learn(transactions):
     # The Preprocessor reimplements StandardScaler and OneHotEncoder so serving needs no
     # scikit-learn; both must produce exactly the same features.
@@ -71,19 +63,9 @@ def test_numpy_preprocessor_matches_scikit_learn(transactions):
     assert prep.feature_names == list(reference.get_feature_names_out())
 
 
-def test_onnx_export_reproduces_keras_and_numpy(tmp_path):
+def test_onnx_export_reproduces_keras(tmp_path):
     model = build_neural_net(n_features=5)
     export_onnx(model, tmp_path / "model.onnx")
     X = np.random.default_rng(0).normal(size=(50, 5)).astype("float32")
-    onnx_model = FraudModel(
-        keras_to_layers(model), preprocessor=None, metadata={}, session=onnx_session(tmp_path / "model.onnx")
-    )
+    onnx_model = FraudModel(onnx_session(tmp_path / "model.onnx"), preprocessor=None, metadata={})
     np.testing.assert_allclose(onnx_model.forward(X), model.predict(X, verbose=0).ravel(), atol=1e-6)
-    np.testing.assert_allclose(onnx_model.forward(X), onnx_model.forward_numpy(X), atol=1e-6)
-
-
-def test_layers_rebuild_the_same_keras_network():
-    model = build_neural_net(n_features=5)
-    rebuilt = layers_to_keras(keras_to_layers(model))
-    X = np.random.default_rng(1).normal(size=(20, 5)).astype("float32")
-    np.testing.assert_array_equal(rebuilt.predict(X, verbose=0), model.predict(X, verbose=0))
