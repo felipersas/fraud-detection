@@ -1,0 +1,47 @@
+name: Release model
+
+# Pushing a tag such as model-2.0.1 publishes models/2.0.1 as a GitHub release,
+# with the bundle attached and notes written from its metadata.json.
+on:
+  push:
+    tags: ["model-*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Package the bundle and write the notes
+        run: |
+          version="${GITHUB_REF_NAME#model-}"
+          bundle="models/$version"
+          test -f "$bundle/metadata.json" || { echo "no bundle at $bundle" >&2; exit 1; }
+          tar -czf "fraud-model-$version.tar.gz" -C models "$version"
+          jq -r '
+            "Fraud detection model **\(.version)**.\n",
+            (if .repackaged_from then "Repackaged from \(.repackaged_from.version) in the JSON bundle format: same weights, statistics and threshold, identical predictions.\n" else empty end),
+            (if (.bundle_format // 1) < 2 then "Legacy bundle format (pickled scikit-learn objects); the API serves its repackaged patch version instead.\n" else empty end),
+            "| | |",
+            "|---|---|",
+            "| Card-history features | \(.card_history // false) |",
+            "| Trained from commit | `\(.git_commit)` |",
+            "| Training data | \(.train_data.from[0:10]) to \(.train_data.to[0:10]) |",
+            "| Decision threshold | \(.threshold) |",
+            "| cv PR-AUC | \(.cv_metrics.pr_auc) |",
+            "| cv precision / recall at the threshold | \(.cv_metrics.precision) / \(.cv_metrics.recall) |",
+            "\nThe one-time test set evaluation is in training/notebooks/06_test_evaluation.ipynb."
+          ' "$bundle/metadata.json" > notes.md
+          # Only the highest servable version is marked as the latest release.
+          highest=$(for d in models/*/; do [ -f "$d/preprocessor.json" ] && basename "$d"; done | sort -V | tail -1)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "LATEST=$([ "$version" = "$highest" ] && echo true || echo false)" >> "$GITHUB_ENV"
+          cat notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "fraud-model-$VERSION.tar.gz" \
+            --title "Model $VERSION" --notes-file notes.md --latest="$LATEST"
