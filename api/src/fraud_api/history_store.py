@@ -44,7 +44,8 @@ class RedisCardHistoryStore:
         members = self.client.zrangebyscore(self._key(card), seconds(time - MAX_GAP), f"({seconds(time)}")
         purchases = []
         for member in members:
-            when, amount, _ = member.decode().split("|")
+            text = member.decode() if isinstance(member, bytes) else str(member)
+            when, amount, _ = text.split("|")
             purchases.append((datetime.fromisoformat(when), float(amount)))
         return history_features(purchases, time)
 

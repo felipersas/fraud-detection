@@ -49,12 +49,13 @@ class DenseLayer:
 
 def save_weights(path: Path, layers: list[DenseLayer]) -> None:
     """Write the layers to a single .npz file: W0, b0, W1, b1, ... and their activations."""
-    arrays = {}
+    arrays: dict[str, np.ndarray] = {}
     for i, layer in enumerate(layers):
         arrays[f"W{i}"] = layer.W
         arrays[f"b{i}"] = layer.b
     arrays["activations"] = np.array([layer.activation for layer in layers])
-    np.savez(path, **arrays)
+    # Plain arrays only: allow_pickle=False keeps the file free of executable content.
+    np.savez(path, allow_pickle=False, **arrays)
 
 
 def load_weights(path: Path) -> list[DenseLayer]:

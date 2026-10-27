@@ -114,10 +114,9 @@ class Preprocessor:
 
     def transform_features(self, df: pd.DataFrame) -> np.ndarray:
         """Return only X, for transactions whose label is unknown (as in serving)."""
-        if self.means is None:
-            raise RuntimeError("Preprocessor must be fitted before transforming")
+        means, scales = self._fitted()
         features = make_features(df, self.card_history)
-        numeric = (features[self.numeric].to_numpy(dtype=float) - self.means) / self.scales
+        numeric = (features[self.numeric].to_numpy(dtype=float) - means) / scales
         one_hot = [
             (features[col].astype(str).to_numpy()[:, None] == np.array(values)[None, :]).astype(float)
             for col, values in self._categories.items()
@@ -134,13 +133,18 @@ class Preprocessor:
         """Values seen in train for each categorical column; anything else is unknown to the model."""
         return {col: list(values) for col, values in self._categories.items()}
 
+    def _fitted(self) -> tuple[np.ndarray, np.ndarray]:
+        if self.means is None or self.scales is None:
+            raise RuntimeError("Preprocessor must be fitted first")
+        return self.means, self.scales
+
     def to_dict(self) -> dict:
         """Everything learned in fit, as plain JSON-serializable values."""
         return {
             "card_history": self.card_history,
             "numeric": self.numeric,
-            "means": self.means.tolist(),
-            "scales": self.scales.tolist(),
+            "means": self._fitted()[0].tolist(),
+            "scales": self._fitted()[1].tolist(),
             "categories": self.categories,
         }
 
@@ -169,4 +173,6 @@ class Preprocessor:
         self.numeric = list(columns.transformers_[0][2])
         self.means = np.asarray(scaler.mean_)
         self.scales = np.asarray(scaler.scale_)
-        self._categories = {col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_)}
+        self._categories = {
+            col: [str(v) for v in values] for col, values in zip(CATEGORICAL, encoder.categories_, strict=True)
+        }

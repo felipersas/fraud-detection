@@ -28,6 +28,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.json_schema import JsonDict
 
 from fraud_api.history_store import RedisCardHistoryStore
 from fraud_core.columns import TIME
@@ -38,7 +39,7 @@ logger = logging.getLogger("fraud_api")
 
 MAX_BATCH_SIZE = 1000
 
-EXAMPLE_TRANSACTION = {
+EXAMPLE_TRANSACTION: JsonDict = {
     "transaction_time": "2020-06-17T00:33:41",
     "amount": 1167.06,
     "category": "shopping_net",
@@ -139,7 +140,7 @@ def to_frame(transactions: list[Transaction]) -> pd.DataFrame:
 HistoryStore = CardHistoryStore | RedisCardHistoryStore
 
 
-def card_history_features(store: HistoryStore, transactions: list[Transaction]) -> pd.DataFrame:
+def card_history_features(store: HistoryStore, transactions: list[Transaction], cards: list[str]) -> pd.DataFrame:
     """Each transaction's card history, recording the transactions as they are scored.
 
     Purchases are processed in time order, so within a batch a later purchase
@@ -150,8 +151,8 @@ def card_history_features(store: HistoryStore, transactions: list[Transaction]) 
     rows: list[dict] = [{} for _ in transactions]
     for i in sorted(range(len(transactions)), key=lambda i: transactions[i].transaction_time):
         t = transactions[i]
-        rows[i] = store.features(t.card_id, t.transaction_time)
-        store.add(t.card_id, t.transaction_time, t.amount)
+        rows[i] = store.features(cards[i], t.transaction_time)
+        store.add(cards[i], t.transaction_time, t.amount)
     return pd.DataFrame(rows)
 
 
@@ -171,13 +172,16 @@ def score(app: FastAPI, transactions: list[Transaction]) -> list[Prediction]:
         if missing:
             raise HTTPException(
                 status_code=422,
-                detail=f"model {model.version} uses card history, so card_id is required (missing at positions {missing})",
+                detail=f"model {model.version} uses card history, so card_id is required "
+                f"(missing at positions {missing})",
             )
+        # Every card_id is present past the check above; this list makes that explicit.
+        cards = [t.card_id for t in transactions if t.card_id is not None]
         # Reading a card's history and recording the new purchase must happen together,
         # or two concurrent requests for the same card could miss each other.
         store: HistoryStore = app.state.history
-        with store.lock(t.card_id for t in transactions):
-            frame = frame.join(card_history_features(store, transactions))
+        with store.lock(cards):
+            frame = frame.join(card_history_features(store, transactions, cards))
     probabilities = model.predict_proba(frame)
     predictions = [
         Prediction(

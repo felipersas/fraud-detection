@@ -27,6 +27,6 @@ def test_weights_survive_a_save_and_load(layers, tmp_path):
     save_weights(tmp_path / "weights.npz", layers)
     loaded = load_weights(tmp_path / "weights.npz")
     assert [layer.activation for layer in loaded] == ["relu", "sigmoid"]
-    for original, restored in zip(layers, loaded):
+    for original, restored in zip(layers, loaded, strict=True):
         np.testing.assert_array_equal(original.W, restored.W)
         np.testing.assert_array_equal(original.b, restored.b)
