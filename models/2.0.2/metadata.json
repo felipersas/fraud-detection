@@ -1,0 +1,98 @@
+{
+  "version": "2.0.2",
+  "created_at": "2026-10-26T23:40:46+00:00",
+  "git_commit": "bb7d300",
+  "dataset": "kaggle:kartik2112/fraud-detection",
+  "train_data": {
+    "from": "2019-01-01 00:00:18",
+    "to": "2019-12-31 23:59:53",
+    "rows": 924850,
+    "frauds": 5220
+  },
+  "cv_data": {
+    "from": "2020-01-01 00:00:57",
+    "to": "2020-06-21 12:13:37",
+    "rows": 371825,
+    "frauds": 2286
+  },
+  "training": {
+    "fraud_weight": 10,
+    "learning_rate": 0.001,
+    "max_epochs": 300,
+    "patience": 10,
+    "seed": 0,
+    "epochs_run": 298,
+    "best_epoch": 288
+  },
+  "threshold": 0.35,
+  "decision_cost": {
+    "false_alarm_cost": 10,
+    "missed_fraud_cost": "purchase amount",
+    "cv_total_cost": 21916.57
+  },
+  "cv_metrics": {
+    "pr_auc": 0.9735,
+    "precision": 0.7478,
+    "recall": 0.9755
+  },
+  "card_history": true,
+  "inputs": [
+    "trans_date_trans_time",
+    "amt",
+    "dob",
+    "city_pop",
+    "lat",
+    "long",
+    "merch_lat",
+    "merch_long",
+    "category",
+    "gender",
+    "tx_last_24h",
+    "night_tx_last_24h",
+    "large_tx_last_24h",
+    "amt_last_24h",
+    "hours_since_prev"
+  ],
+  "features": [
+    "numeric__log_amt",
+    "numeric__hour",
+    "numeric__day_of_week",
+    "numeric__age",
+    "numeric__log_city_pop",
+    "numeric__distance_km",
+    "numeric__tx_last_24h",
+    "numeric__night_tx_last_24h",
+    "numeric__large_tx_last_24h",
+    "numeric__log_amt_last_24h",
+    "numeric__log_hours_since_prev",
+    "categorical__category_entertainment",
+    "categorical__category_food_dining",
+    "categorical__category_gas_transport",
+    "categorical__category_grocery_net",
+    "categorical__category_grocery_pos",
+    "categorical__category_health_fitness",
+    "categorical__category_home",
+    "categorical__category_kids_pets",
+    "categorical__category_misc_net",
+    "categorical__category_misc_pos",
+    "categorical__category_personal_care",
+    "categorical__category_shopping_net",
+    "categorical__category_shopping_pos",
+    "categorical__category_travel",
+    "categorical__gender_F",
+    "categorical__gender_M"
+  ],
+  "trained_with": {
+    "python": "3.12.13",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0",
+    "scikit-learn": "1.9.1",
+    "tensorflow": "2.21.0"
+  },
+  "bundle_format": 3,
+  "repackaged_from": {
+    "version": "2.0.1",
+    "at": "2026-10-27T00:56:25+00:00",
+    "git_commit": "232a44c"
+  }
+}
