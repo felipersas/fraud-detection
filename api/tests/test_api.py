@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +13,7 @@ from fraud_core.history import HISTORY_COLUMNS
 from fraud_core.model import FraudModel
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-V1, V2 = "1.0.1", "2.0.1"
+V1, V2 = "1.0.2", "2.0.2"
 
 # Same customer as the example, but a small daytime purchase in a low-risk store.
 CALM_TRANSACTION = {
@@ -84,7 +85,16 @@ def test_serves_the_highest_version_by_default(client):
 @pytest.mark.parametrize("version", [V1, V2])
 def test_serves_the_requested_version(monkeypatch, version):
     with serving(monkeypatch, version) as client:
-        assert client.get("/model").json()["version"] == version
+        info = client.get("/model").json()
+    assert info["version"] == version
+    assert info["runtime"] == "onnxruntime"
+
+
+def test_onnx_graph_matches_the_numpy_network():
+    # Two independent implementations of the same network must agree.
+    bundle = FraudModel.load(MODELS_DIR / V2)
+    X = np.random.default_rng(0).normal(size=(500, bundle.layers[0].W.shape[0]))
+    np.testing.assert_allclose(bundle.forward(X), bundle.forward_numpy(X), atol=1e-5)
 
 
 def test_unknown_category_is_rejected(client):
