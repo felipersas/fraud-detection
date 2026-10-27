@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from fraud_core.columns import TIME
 from fraud_core.history import CardHistoryStore
-from fraud_core.model import FraudModel
+from fraud_core.model import PREPROCESSOR_FILE, FraudModel
 
 logger = logging.getLogger("fraud_api")
 
@@ -94,14 +94,24 @@ class BatchPrediction(BaseModel):
     predictions: list[Prediction]
 
 
+def servable(bundle: Path) -> bool:
+    """Whether a bundle can be served: bundles 1.0.0 and 2.0.0 use the legacy pickled format."""
+    return (bundle / PREPROCESSOR_FILE).exists()
+
+
 def find_bundle(models_dir: Path, version: str | None) -> Path:
-    """Folder of the requested version, or of the highest version when none is given."""
+    """Folder of the requested version, or of the highest servable version when none is given."""
     if version:
-        return models_dir / version
+        bundle = models_dir / version
+        if not servable(bundle):
+            raise RuntimeError(
+                f"bundle {version} is missing or uses the legacy format; serve its repackaged patch version instead"
+            )
+        return bundle
     # Folders like ".1.1.0.partial" are unfinished exports and must never be served.
-    versions = [p for p in models_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    versions = [p for p in models_dir.iterdir() if p.is_dir() and not p.name.startswith(".") and servable(p)]
     if not versions:
-        raise RuntimeError(f"no model bundle found in {models_dir}")
+        raise RuntimeError(f"no servable model bundle found in {models_dir}")
     return max(versions, key=lambda p: tuple(int(part) for part in p.name.split(".")))
 
 

@@ -8,4 +8,6 @@
 !packages/fraud-core/src
 !training/pyproject.toml
 !models
+# Legacy bundles pickle scikit-learn objects the image cannot load; their repackaged versions are served.
+models/*/preprocessor.joblib
 **/__pycache__

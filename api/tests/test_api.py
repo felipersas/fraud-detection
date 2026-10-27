@@ -12,7 +12,7 @@ from fraud_core.history import HISTORY_COLUMNS
 from fraud_core.model import FraudModel
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-V1, V2 = "1.0.0", "2.0.0"
+V1, V2 = "1.0.1", "2.0.1"
 
 # Same customer as the example, but a small daytime purchase in a low-risk store.
 CALM_TRANSACTION = {**EXAMPLE_TRANSACTION, "transaction_time": "2020-06-17T14:10:00", "amount": 25.0, "category": "food_dining"}
@@ -55,6 +55,15 @@ def without_card(transaction: dict) -> dict:
 
 
 # Behaviour shared by every model version
+
+
+def test_legacy_bundles_are_not_served(monkeypatch):
+    # 2.0.0 pickles scikit-learn objects; the API points to its repackaged version instead.
+    monkeypatch.setenv("FRAUD_MODELS_DIR", str(MODELS_DIR))
+    monkeypatch.setenv("FRAUD_MODEL_VERSION", "2.0.0")
+    with pytest.raises(RuntimeError, match="legacy format"):
+        with TestClient(app):
+            pass
 
 
 def test_serves_the_highest_version_by_default(client):
