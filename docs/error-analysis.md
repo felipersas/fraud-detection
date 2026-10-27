@@ -78,9 +78,9 @@ Some errors are not a modelling problem: the inputs simply do not contain the si
 
 ## Closing the loop
 
-Error analysis is only worth the time if it changes what you build next. Here it pointed at one missing input, recent card activity, and model 2.0.0 added it. Measured on cv, each model at its own cost-based threshold:
+Error analysis is only worth the time if it changes what you build next. Here it pointed at one missing input, recent card activity, and model 2.0.2 added it. Measured on cv, each model at its own cost-based threshold:
 
-| | Model 1.0.0 | Model 2.0.0 |
+| | Model 1.0.2 | Model 2.0.2 |
 |---|---:|---:|
 | Missed frauds | 204 | 56 |
 | of which: card already in a burst | 194 | 20 |

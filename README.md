@@ -12,9 +12,9 @@ The focus is less on squeezing out the best score and more on doing each step th
 - A small neural network reaches a **PR-AUC of 0.88** on the validation set, against **0.35** for logistic regression. The fraud patterns are non-linear (risky hours on both sides of midnight), which a linear model cannot capture.
 - Searching the fraud class weight on validation found that a small weight (10) works best: PR-AUC rose from **0.46** with a weight of 400 to **0.74**, and the usual default, the class ratio (176), scored only 0.55. Training with a larger learning rate and early stopping took it to **0.86** (average of three seeds).
 - Error analysis showed that both error types come from the same blind spot: the model scores each purchase on its own. **92%** of the missed frauds happen while the card is already in a fraud burst, and **85%** of the false alarms come from cards with a calm recent history.
-- Acting on it, model 2.0.0 adds features from each card's recent purchases. PR-AUC rises to **0.966** (three seeds), and at the cost-based threshold **both error types fall together**: missed frauds from 204 to **56**, false alarms from 2,722 to **752**, halving the cost on cv.
-- On the **test set**, untouched until the end, model 2.0.0 scores a PR-AUC of **0.959** (0.973 on cv) and catches **95.8%** of frauds with 69% precision, avoiding 97% of the fraud cost.
-- Each model ships as a **12 KB versioned bundle**: the network exported to **ONNX**, the same weights as plain arrays, and the preprocessing statistics as JSON. A FastAPI app serves it with **ONNX Runtime**, so the API image (377 MB) needs neither TensorFlow nor scikit-learn, and an independent NumPy implementation of the network cross-checks every export. Card history lives in Redis, shared by every replica and kept across restarts, and a test checks the serving computation matches training exactly. Switching versions or rolling back is one environment variable, each model is a GitHub release, and CI lints, type-checks and tests every package, the image and the API with Redis.
+- Acting on it, model 2.0.2 adds features from each card's recent purchases. PR-AUC rises to **0.966** (three seeds), and at the cost-based threshold **both error types fall together**: missed frauds from 204 to **56**, false alarms from 2,722 to **752**, halving the cost on cv.
+- On the **test set**, untouched until the end, model 2.0.2 scores a PR-AUC of **0.959** (0.973 on cv) and catches **95.8%** of frauds with 69% precision, avoiding 97% of the fraud cost.
+- Each model ships as a **6 KB versioned bundle**: the network exported to **ONNX** and the preprocessing statistics as JSON. A FastAPI app serves it with **ONNX Runtime**, so the API image (377 MB) needs neither TensorFlow nor scikit-learn. Card history lives in Redis, shared by every replica and kept across restarts, and a test checks the serving computation matches training exactly. Switching versions or rolling back is one environment variable, each model is a GitHub release, and CI lints, type-checks and tests every package, the image and the API with Redis.
 
 ## The problem
 
@@ -42,7 +42,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 5. **Hyperparameter search on cv.** The fraud class weight (five values) and the training setup (learning rate and early stopping), each with three seeds, so real effects can be told apart from run-to-run noise.
 6. **Diagnosis and error analysis.** Learning curves (J_train vs J_cv), then a sample of 100 missed frauds and 100 false alarms, tagged and counted as taught in the course. The strategies are written up in [docs/error-analysis.md](docs/error-analysis.md).
 7. **Decision threshold by cost.** A missed fraud costs its purchase amount and a false alarm a fixed $10; the threshold is the one with the lowest total cost on cv.
-8. **Card-history features (model 2.0.0).** What the same card did in the previous 24 hours, computed only from its earlier purchases, as the error analysis suggested.
+8. **Card-history features (model 2.0.2).** What the same card did in the previous 24 hours, computed only from its earlier purchases, as the error analysis suggested.
 9. **Versioned model bundle.** `fraud-train` retrains the final network, picks the threshold and exports a small, self-describing bundle, with the network in ONNX, that the API runs without TensorFlow.
 10. **Serving.** A FastAPI service scores transactions with the bundle, validates inputs against what the model was trained on, keeps card history in Redis, and ships as a Docker image tested in CI.
 11. **Final evaluation.** The published models are scored once on the test set, after every decision was taken.
@@ -54,8 +54,8 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 | Lazy (always "legit") | 0.000 | 0.000 | 0.000 | 0.006 |
 | Logistic regression | 0.706 | 0.084 | 0.150 | 0.351 |
 | Logistic regression (balanced weights) | 0.018 | 0.743 | 0.035 | 0.165 |
-| Neural network (model 1.0.0) | 0.718 | 0.841 | 0.775 | 0.876 |
-| **Neural network + card history (model 2.0.0)** | **0.828** | **0.965** | **0.891** | **0.973** |
+| Neural network (model 1.0.2) | 0.718 | 0.841 | 0.775 | 0.876 |
+| **Neural network + card history (model 2.0.2)** | **0.828** | **0.965** | **0.891** | **0.973** |
 
 Precision, recall and F1 use the default 0.5 threshold; PR-AUC is threshold-free. The neural network rows are the published bundles (seed 0); across three seeds, PR-AUC is 0.855 ± 0.022 without card history and 0.966 ± 0.011 with it.
 
@@ -109,9 +109,9 @@ The cost-based threshold is 27% cheaper than the default, and the model avoids 9
 
 ![Cost of each threshold](training/reports/figures/threshold_cost.png)
 
-### Card history (model 2.0.0)
+### Card history (model 2.0.2)
 
-The error analysis pointed at one missing piece of information: what the same card did just before each purchase. Model 2.0.0 adds five features, computed by `fraud_core.history` from **strictly earlier purchases of the same card** and no fraud labels, so nothing leaks from the future:
+The error analysis pointed at one missing piece of information: what the same card did just before each purchase. Model 2.0.2 adds five features, computed by `fraud_core.history` from **strictly earlier purchases of the same card** and no fraud labels, so nothing leaks from the future:
 
 | Feature | Legit (mean) | Fraud (mean) |
 |---|---:|---:|
@@ -123,7 +123,7 @@ The error analysis pointed at one missing piece of information: what the same ca
 
 Frauds do not come with more purchases, they come with different ones. Comparing both published models, each at its own cost-based threshold:
 
-| | Model 1.0.0 | Model 2.0.0 |
+| | Model 1.0.2 | Model 2.0.2 |
 |---|---:|---:|
 | Threshold | 0.23 | 0.35 |
 | Missed frauds | 204 | **56** |
@@ -138,7 +138,7 @@ A threshold can only trade one error for the other; reducing both at once needs 
 
 Every decision was taken on cv, which makes cv numbers slightly optimistic. The test set (21 June to 31 December 2020) was scored **once**, at the end, with each published model at the threshold it was released with:
 
-| | Model 1.0.0 | Model 2.0.0 |
+| | Model 1.0.2 | Model 2.0.2 |
 |---|---:|---:|
 | PR-AUC (cv / test) | 0.876 / 0.833 | 0.973 / **0.959** |
 | Recall on test | 88.5% | **95.8%** |
@@ -147,9 +147,9 @@ Every decision was taken on cv, which makes cv numbers slightly optimistic. The 
 | False alarms | 3,789 | **906** |
 | **Cost on test** | **$58,611** | **$32,608** |
 
-Approving everything would have cost $1.13 million over the same period. Month by month, model 2.0.0 keeps recall between 94% and 98%; precision holds around 0.7 and dips to 0.59 in December, when purchase volume nearly doubles and the fraud rate falls to 0.19%. That is base-rate drift, the kind of change monitoring should catch. No model was changed after seeing these numbers. See `training/notebooks/06_test_evaluation.ipynb`.
+Approving everything would have cost $1.13 million over the same period. Month by month, model 2.0.2 keeps recall between 94% and 98%; precision holds around 0.7 and dips to 0.59 in December, when purchase volume nearly doubles and the fraud rate falls to 0.19%. That is base-rate drift, the kind of change monitoring should catch. No model was changed after seeing these numbers. See `training/notebooks/06_test_evaluation.ipynb`.
 
-![Model 2.0.0 on the test set, month by month](training/reports/figures/test_monthly.png)
+![Model 2.0.2 on the test set, month by month](training/reports/figures/test_monthly.png)
 
 ## The model bundle
 
@@ -158,7 +158,6 @@ Approving everything would have cost $1.13 million over the same period. Month b
 | File | Contents |
 |---|---|
 | `model.onnx` | the network exported to ONNX, the standard format for trained models |
-| `weights.npz` | the same network as plain arrays: weights, bias and activation of each layer |
 | `preprocessor.json` | what the feature pipeline learned on the training set: means, scales and categories |
 | `metadata.json` | version, git commit, training and cv periods, training setup, threshold, cost model, cv metrics and whether the model needs card history |
 
@@ -168,11 +167,9 @@ The network is exported with Keras's own ONNX exporter. ONNX is a framework-neut
 MatMul → Add → Relu → MatMul → Add → Relu → MatMul → Add → Sigmoid
 ```
 
-Since a Dense layer only computes `activation(X @ W + b)`, the same network also takes a few lines of NumPy (`FraudModel.forward_numpy`). That second, independent implementation is the safety net: before publishing, `fraud-train` reloads the bundle exactly as serving will and checks that the ONNX graph reproduces both Keras and NumPy on cv. The preprocessor's standardization and one-hot encoding are plain NumPy too, matching scikit-learn's bit for bit (tested), so loading a bundle never executes pickled code. A version folder is never overwritten.
+Before publishing, `fraud-train` reloads the bundle exactly as serving will and checks that the ONNX graph reproduces the Keras predictions on cv. The preprocessor's standardization and one-hot encoding are plain NumPy, matching scikit-learn's bit for bit (tested), and are stored as JSON, so loading a bundle never executes pickled code. A version folder is never overwritten.
 
-The NumPy path alone made a smaller image (308 MB against 377 MB with ONNX Runtime). ONNX was chosen anyway because it is what production serving uses: the same runtime would serve any architecture, not just stacks of Dense layers.
-
-The bundle format evolved twice, and published versions were never rewritten. 1.0.0 and 2.0.0 pickled scikit-learn objects; `fraud-repackage` republished them as **1.0.1 and 2.0.1** with a JSON preprocessor, then as **1.0.2 and 2.0.2** with the ONNX graph. Each repackaging keeps the weights, statistics and threshold, and is checked to make the same decision on every one of the 371,825 cv transactions. A patch version signals exactly that, a new package with unchanged behaviour. The API serves only JSON bundles, and by default the highest version, 2.0.2.
+The patch number in 1.0.2 and 2.0.2 records two earlier packagings of the same models (pickled scikit-learn objects, then plain NumPy weights), retired once the ONNX format replaced them; the git history keeps them. Each repackaging kept the weights, statistics and threshold, and was checked to make the same decision on every one of the 371,825 cv transactions. The API serves the highest version, 2.0.2.
 
 Each version is also a [GitHub release](https://github.com/felipersas/fraud-detection/releases) with the bundle attached: pushing a tag such as `model-2.0.2` runs [release-model.yml](.github/workflows/release-model.yml), which packages `models/2.0.2` and writes the notes from its metadata. Push model tags one at a time: GitHub does not trigger workflows when more than three tags arrive in a single push.
 
@@ -222,7 +219,7 @@ fraud-detection/
 ├── compose.yaml                  # the API with Redis for card history
 ├── uv.lock                       # exact versions of every dependency
 ├── packages/
-│   └── fraud-core/               # shared by training and serving (numpy and pandas only)
+│   └── fraud-core/               # shared by training and serving (numpy, pandas, onnxruntime)
 │       └── src/fraud_core/
 │           ├── columns.py        # names of the raw columns
 │           ├── features.py       # feature engineering, train-only scaling and encoding
@@ -233,7 +230,6 @@ fraud-detection/
 │   │   ├── data.py               # loading and the time-based train/cv/test split
 │   │   ├── train.py              # baselines, the neural network and its training loop
 │   │   ├── export.py             # fraud-train: train the final model and export a bundle
-│   │   ├── repackage.py          # fraud-repackage: republish a bundle in the current format
 │   │   ├── evaluate.py           # metrics, PR curves and cost by threshold
 │   │   ├── error_analysis.py     # error sampling, tagging and card-history counts
 │   │   ├── tune_fraud_weight.py  # search for the fraud class weight
