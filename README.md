@@ -165,7 +165,7 @@ A trained Dense network only computes `activation(X @ W + b)` layer after layer,
 
 Bundles 1.0.0 and 2.0.0 predate the JSON format and pickle scikit-learn objects. Rather than rewriting published versions, `fraud-repackage` republished them as **1.0.1 and 2.0.1**: same weights, statistics and thresholds, with predictions checked identical on all of cv. A patch version signals exactly that, a new package with unchanged behaviour. The API serves only the JSON bundles.
 
-Each version is also a [GitHub release](https://github.com/felipersas/fraud-detection/releases) with the bundle attached: pushing a tag such as `model-2.0.1` runs [release-model.yml](.github/workflows/release-model.yml), which packages `models/2.0.1` and writes the notes from its metadata.
+Each version is also a [GitHub release](https://github.com/felipersas/fraud-detection/releases) with the bundle attached: pushing a tag such as `model-2.0.1` runs [release-model.yml](.github/workflows/release-model.yml), which packages `models/2.0.1` and writes the notes from its metadata. Push model tags one at a time: GitHub does not trigger workflows when more than three tags arrive in a single push.
 
 ## The API
 
