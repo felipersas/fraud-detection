@@ -14,7 +14,7 @@ The focus is less on squeezing out the best score and more on doing each step th
 - Error analysis showed that both error types come from the same blind spot: the model scores each purchase on its own. **92%** of the missed frauds happen while the card is already in a fraud burst, and **85%** of the false alarms come from cards with a calm recent history.
 - Acting on it, model 2.0.0 adds features from each card's recent purchases. PR-AUC rises to **0.966** (three seeds), and at the cost-based threshold **both error types fall together**: missed frauds from 204 to **56**, false alarms from 2,722 to **752**, halving the cost on cv.
 - On the **test set**, untouched until the end, model 2.0.0 scores a PR-AUC of **0.959** (0.973 on cv) and catches **95.8%** of frauds with 69% precision, avoiding 97% of the fraud cost.
-- Each model ships as a **12 KB versioned bundle** of plain arrays and JSON, served by a FastAPI app that runs the network in NumPy: the API image (308 MB) needs neither TensorFlow nor scikit-learn. Card history lives in Redis, shared by every replica and kept across restarts, and a test checks the serving computation matches training exactly. Switching versions or rolling back is one environment variable, each model is a GitHub release, and CI lints, type-checks and tests every package, the image and the API with Redis.
+- Each model ships as a **12 KB versioned bundle**: the network exported to **ONNX**, the same weights as plain arrays, and the preprocessing statistics as JSON. A FastAPI app serves it with **ONNX Runtime**, so the API image (377 MB) needs neither TensorFlow nor scikit-learn, and an independent NumPy implementation of the network cross-checks every export. Card history lives in Redis, shared by every replica and kept across restarts, and a test checks the serving computation matches training exactly. Switching versions or rolling back is one environment variable, each model is a GitHub release, and CI lints, type-checks and tests every package, the image and the API with Redis.
 
 ## The problem
 
@@ -43,7 +43,7 @@ A model that never flags anything is 99.5% accurate, so accuracy is useless here
 6. **Diagnosis and error analysis.** Learning curves (J_train vs J_cv), then a sample of 100 missed frauds and 100 false alarms, tagged and counted as taught in the course. The strategies are written up in [docs/error-analysis.md](docs/error-analysis.md).
 7. **Decision threshold by cost.** A missed fraud costs its purchase amount and a false alarm a fixed $10; the threshold is the one with the lowest total cost on cv.
 8. **Card-history features (model 2.0.0).** What the same card did in the previous 24 hours, computed only from its earlier purchases, as the error analysis suggested.
-9. **Versioned model bundle.** `fraud-train` retrains the final network, picks the threshold and exports a small, self-describing bundle that the API can load without TensorFlow.
+9. **Versioned model bundle.** `fraud-train` retrains the final network, picks the threshold and exports a small, self-describing bundle, with the network in ONNX, that the API runs without TensorFlow.
 10. **Serving.** A FastAPI service scores transactions with the bundle, validates inputs against what the model was trained on, keeps card history in Redis, and ships as a Docker image tested in CI.
 11. **Final evaluation.** The published models are scored once on the test set, after every decision was taken.
 
@@ -157,15 +157,24 @@ Approving everything would have cost $1.13 million over the same period. Month b
 
 | File | Contents |
 |---|---|
-| `weights.npz` | weights and bias of each Dense layer, and each layer's activation |
+| `model.onnx` | the network exported to ONNX, the standard format for trained models |
+| `weights.npz` | the same network as plain arrays: weights, bias and activation of each layer |
 | `preprocessor.json` | what the feature pipeline learned on the training set: means, scales and categories |
 | `metadata.json` | version, git commit, training and cv periods, training setup, threshold, cost model, cv metrics and whether the model needs card history |
 
-A trained Dense network only computes `activation(X @ W + b)` layer after layer, so `fraud_core.model` runs it with NumPy. The preprocessor's standardization and one-hot encoding are plain NumPy too, matching scikit-learn's bit for bit (tested), so serving needs neither TensorFlow nor scikit-learn, and loading a bundle never executes pickled code. Before publishing, `fraud-train` reloads the bundle exactly as serving will and checks that it reproduces the Keras predictions on cv; a version folder is never overwritten.
+The network is exported with Keras's own ONNX exporter. ONNX is a framework-neutral description of a computation graph, and ONNX Runtime is a small engine that executes it, so serving needs neither TensorFlow nor the code that built the model. For this network the graph is exactly what the course describes as forward propagation, three times `MatMul → Add → activation`:
 
-Bundles 1.0.0 and 2.0.0 predate the JSON format and pickle scikit-learn objects. Rather than rewriting published versions, `fraud-repackage` republished them as **1.0.1 and 2.0.1**: same weights, statistics and thresholds, with predictions checked identical on all of cv. A patch version signals exactly that, a new package with unchanged behaviour. The API serves only the JSON bundles.
+```
+MatMul → Add → Relu → MatMul → Add → Relu → MatMul → Add → Sigmoid
+```
 
-Each version is also a [GitHub release](https://github.com/felipersas/fraud-detection/releases) with the bundle attached: pushing a tag such as `model-2.0.1` runs [release-model.yml](.github/workflows/release-model.yml), which packages `models/2.0.1` and writes the notes from its metadata. Push model tags one at a time: GitHub does not trigger workflows when more than three tags arrive in a single push.
+Since a Dense layer only computes `activation(X @ W + b)`, the same network also takes a few lines of NumPy (`FraudModel.forward_numpy`). That second, independent implementation is the safety net: before publishing, `fraud-train` reloads the bundle exactly as serving will and checks that the ONNX graph reproduces both Keras and NumPy on cv. The preprocessor's standardization and one-hot encoding are plain NumPy too, matching scikit-learn's bit for bit (tested), so loading a bundle never executes pickled code. A version folder is never overwritten.
+
+The NumPy path alone made a smaller image (308 MB against 377 MB with ONNX Runtime). ONNX was chosen anyway because it is what production serving uses: the same runtime would serve any architecture, not just stacks of Dense layers.
+
+The bundle format evolved twice, and published versions were never rewritten. 1.0.0 and 2.0.0 pickled scikit-learn objects; `fraud-repackage` republished them as **1.0.1 and 2.0.1** with a JSON preprocessor, then as **1.0.2 and 2.0.2** with the ONNX graph. Each repackaging keeps the weights, statistics and threshold, and is checked to make the same decision on every one of the 371,825 cv transactions. A patch version signals exactly that, a new package with unchanged behaviour. The API serves only JSON bundles, and by default the highest version, 2.0.2.
+
+Each version is also a [GitHub release](https://github.com/felipersas/fraud-detection/releases) with the bundle attached: pushing a tag such as `model-2.0.2` runs [release-model.yml](.github/workflows/release-model.yml), which packages `models/2.0.2` and writes the notes from its metadata. Push model tags one at a time: GitHub does not trigger workflows when more than three tags arrive in a single push.
 
 ## The API
 
@@ -189,7 +198,7 @@ curl -X POST localhost:8000/predict -H 'content-type: application/json' -d '{
 ```
 
 ```json
-{"fraud_probability": 0.982885, "is_fraud": true, "threshold": 0.35, "model_version": "2.0.1"}
+{"fraud_probability": 0.982885, "is_fraud": true, "threshold": 0.35, "model_version": "2.0.2"}
 ```
 
 Card-history models need `card_id`. Before scoring, the API reads that card's purchases from the previous 24 hours, computes the same five features as training, then records the new purchase; a batch is processed in time order, and a lock keeps concurrent requests for one card consistent. A test replays random purchase sequences through this path and through the training code and checks they agree exactly, which guards against training-serving skew. Model 1.x ignores `card_id`.
@@ -198,7 +207,7 @@ With `REDIS_URL` set, card history lives in Redis: each card is a sorted set of 
 
 Inputs are validated before scoring: amounts must be positive, coordinates within range, and the store category one the model saw in training. An unseen category would otherwise be encoded as "none of them" and produce a score the model was never trained for, so it is rejected with a 422 instead. Every request logs the number of transactions, how many were flagged, the model version and the latency, which is the raw material for monitoring.
 
-The Docker image installs only `fraud-api` and `fraud-core` (308 MB, down from 518 MB once scikit-learn and SciPy were no longer needed), runs as a non-root user and has a health check. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs ruff and mypy, every package's tests, builds and smoke tests the image, and starts the API with Redis to check that card history survives an API restart.
+The Docker image installs only `fraud-api` and `fraud-core` (377 MB: 518 MB with scikit-learn and SciPy, which serving no longer needs, and more than 2 GB if it carried TensorFlow), runs as a non-root user and has a health check. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs ruff and mypy, every package's tests, builds and smoke tests the image, and starts the API with Redis to check that card history survives an API restart.
 
 ## Project structure
 
@@ -218,7 +227,7 @@ fraud-detection/
 │           ├── columns.py        # names of the raw columns
 │           ├── features.py       # feature engineering, train-only scaling and encoding
 │           ├── history.py        # card-history features, for a table and one purchase at a time
-│           └── model.py          # load a model bundle and score transactions with NumPy
+│           └── model.py          # load a model bundle and score transactions with ONNX Runtime
 ├── training/                     # everything needed to build the model (TensorFlow, Jupyter)
 │   ├── src/fraud_training/
 │   │   ├── data.py               # loading and the time-based train/cv/test split
@@ -269,8 +278,8 @@ uv run fraud-api                             # serve the latest model on localho
 docker compose up --build                    # the API with Redis on localhost:8000
 
 docker build -f api/Dockerfile -t fraud-api .
-docker run -p 8000:8000 fraud-api                                 # serves 2.0.1, history in memory
-docker run -p 8000:8000 -e FRAUD_MODEL_VERSION=1.0.1 fraud-api    # rolls back to 1.0.1
+docker run -p 8000:8000 fraud-api                                 # serves 2.0.2, history in memory
+docker run -p 8000:8000 -e FRAUD_MODEL_VERSION=1.0.2 fraud-api    # rolls back to 1.0.2
 
 uv run ruff check . && uv run ruff format --check . && uv run mypy packages/fraud-core/src api/src training/src
 ```
