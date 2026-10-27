@@ -1,0 +1,28 @@
+# The API with card history kept in Redis: docker compose up --build
+services:
+  redis:
+    image: redis:8-alpine
+    # Append-only mode writes every change to disk, so history also survives a Redis restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:

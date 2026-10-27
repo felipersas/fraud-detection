@@ -5,17 +5,17 @@
 Configuration (environment variables):
 - FRAUD_MODELS_DIR: folder holding one subfolder per model version (default: models)
 - FRAUD_MODEL_VERSION: version to serve (default: the highest version found)
+- REDIS_URL: where to keep card history, e.g. redis://localhost:6379/0 (default: in memory)
 - HOST / PORT: where to listen (default: 0.0.0.0:8000)
 
-Card-history models (2.x) need each card's recent purchases. The API keeps
-them in memory as it scores, so a new instance starts with every card looking
-quiet, and several replicas would not share what they saw. A shared store
-such as Redis, warmed up from recent transactions, would fix both.
+Card-history models (2.x) need each card's recent purchases, recorded as the
+API scores them. In memory, a new instance starts with every card looking
+quiet and each replica sees only its own traffic. With REDIS_URL set, every
+replica shares one history that survives restarts.
 """
 
 import logging
 import os
-import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -23,13 +23,16 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+import redis
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from fraud_core.columns import TIME
 from fraud_core.history import CardHistoryStore
 from fraud_core.model import PREPROCESSOR_FILE, FraudModel
+from fraud_api.history_store import RedisCardHistoryStore
 
 logger = logging.getLogger("fraud_api")
 
@@ -133,7 +136,10 @@ def to_frame(transactions: list[Transaction]) -> pd.DataFrame:
     )
 
 
-def card_history_features(store: CardHistoryStore, transactions: list[Transaction]) -> pd.DataFrame:
+HistoryStore = CardHistoryStore | RedisCardHistoryStore
+
+
+def card_history_features(store: HistoryStore, transactions: list[Transaction]) -> pd.DataFrame:
     """Each transaction's card history, recording the transactions as they are scored.
 
     Purchases are processed in time order, so within a batch a later purchase
@@ -169,8 +175,9 @@ def score(app: FastAPI, transactions: list[Transaction]) -> list[Prediction]:
             )
         # Reading a card's history and recording the new purchase must happen together,
         # or two concurrent requests for the same card could miss each other.
-        with app.state.history_lock:
-            frame = frame.join(card_history_features(app.state.history, transactions))
+        store: HistoryStore = app.state.history
+        with store.lock(t.card_id for t in transactions):
+            frame = frame.join(card_history_features(store, transactions))
     probabilities = model.predict_proba(frame)
     predictions = [
         Prediction(
@@ -192,14 +199,26 @@ def score(app: FastAPI, transactions: list[Transaction]) -> list[Prediction]:
     return predictions
 
 
+def make_history_store() -> HistoryStore:
+    """Redis when REDIS_URL is set, otherwise an in-memory store for a single instance."""
+    url = os.environ.get("REDIS_URL")
+    if url:
+        return RedisCardHistoryStore(redis.Redis.from_url(url))
+    return CardHistoryStore()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bundle = find_bundle(Path(os.environ.get("FRAUD_MODELS_DIR", "models")), os.environ.get("FRAUD_MODEL_VERSION"))
     app.state.model = FraudModel.load(bundle)
     # Recent purchases per card, filled as requests arrive; only card-history models read it.
-    app.state.history = CardHistoryStore()
-    app.state.history_lock = threading.Lock()
-    logger.info("loaded model version=%s from %s", app.state.model.version, bundle)
+    app.state.history = make_history_store()
+    logger.info(
+        "loaded model version=%s from %s, card history in %s",
+        app.state.model.version,
+        bundle,
+        history_backend(app.state.history),
+    )
     yield
 
 
@@ -211,9 +230,18 @@ app = FastAPI(
 )
 
 
+def history_backend(store: HistoryStore) -> str:
+    return "redis" if isinstance(store, RedisCardHistoryStore) else "memory"
+
+
 @app.get("/health")
-def health(request: Request) -> dict:
-    return {"status": "ok", "model_version": request.app.state.model.version}
+def health(request: Request):
+    """Ready when the model is loaded and, if card history lives in Redis, Redis answers."""
+    store: HistoryStore = request.app.state.history
+    body = {"model_version": request.app.state.model.version, "card_history_store": history_backend(store)}
+    if isinstance(store, RedisCardHistoryStore) and not store.ping():
+        return JSONResponse(status_code=503, content={"status": "unavailable", **body})
+    return {"status": "ok", **body}
 
 
 @app.get("/model")

@@ -15,7 +15,10 @@ The same numbers are computed in two ways:
 Tests check that both agree, so training and serving never drift apart.
 """
 
+import threading
 from collections import defaultdict, deque
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -74,29 +77,40 @@ def card_history(df: pd.DataFrame) -> pd.DataFrame:
     return out.reindex(df.index)
 
 
+def history_features(purchases: Iterable[tuple[datetime, float]], time: datetime) -> dict[str, float]:
+    """A card's history before `time`, from its purchases as (time, amount) pairs.
+
+    Gives the same numbers as card_history for one purchase. Every serving
+    store computes its features through this function, whatever it keeps the
+    purchases in, so the arithmetic exists in one place only.
+    """
+    earlier = [(t, amt) for t, amt in purchases if time - MAX_GAP <= t < time]
+    last_day = [(t, amt) for t, amt in earlier if t >= time - WINDOW]
+    gap = (time - max(t for t, _ in earlier)) if earlier else MAX_GAP
+    return {
+        "tx_last_24h": float(len(last_day)),
+        "night_tx_last_24h": float(sum(t.hour in NIGHT_HOURS for t, _ in last_day)),
+        "large_tx_last_24h": float(sum(amt > LARGE_AMOUNT for _, amt in last_day)),
+        "amt_last_24h": float(sum(amt for _, amt in last_day)),
+        "hours_since_prev": min(gap, MAX_GAP) / timedelta(hours=1),
+    }
+
+
 class CardHistoryStore:
     """In-memory record of recent purchases per card, for scoring one purchase at a time.
 
     It keeps each card's purchases from the last MAX_GAP only. Being in memory,
-    it starts empty and is lost on restart, and every API replica would hold its
-    own copy; a shared store such as Redis would fix both in production.
+    it starts empty and is lost on restart, and every API replica holds its own
+    copy; the API's Redis store fixes both.
     """
 
     def __init__(self):
         self._purchases: dict[str, deque[tuple[datetime, float]]] = defaultdict(deque)
+        self._lock = threading.Lock()
 
     def features(self, card: str, time: datetime) -> dict[str, float]:
         """The card's history before `time`, with the same meaning as card_history."""
-        earlier = [(t, amt) for t, amt in self._purchases.get(card, ()) if time - MAX_GAP <= t < time]
-        last_day = [(t, amt) for t, amt in earlier if t >= time - WINDOW]
-        gap = (time - max(t for t, _ in earlier)) if earlier else MAX_GAP
-        return {
-            "tx_last_24h": float(len(last_day)),
-            "night_tx_last_24h": float(sum(t.hour in NIGHT_HOURS for t, _ in last_day)),
-            "large_tx_last_24h": float(sum(amt > LARGE_AMOUNT for _, amt in last_day)),
-            "amt_last_24h": float(sum(amt for _, amt in last_day)),
-            "hours_since_prev": min(gap, MAX_GAP) / timedelta(hours=1),
-        }
+        return history_features(self._purchases.get(card, ()), time)
 
     def add(self, card: str, time: datetime, amount: float) -> None:
         purchases = self._purchases[card]
@@ -105,3 +119,13 @@ class CardHistoryStore:
         newest = max(t for t, _ in purchases)
         while purchases and purchases[0][0] < newest - MAX_GAP:
             purchases.popleft()
+
+    @contextmanager
+    def lock(self, cards: Iterable[str]) -> Iterator[None]:
+        """Hold while reading a card's history and recording its new purchase.
+
+        Without it, two concurrent requests for the same card could each miss
+        the other. One lock for the whole store is enough in a single process.
+        """
+        with self._lock:
+            yield

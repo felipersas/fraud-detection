@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.162",
     "fraud-core",
+    "redis>=8.1.0",
     "uvicorn>=0.54",
 ]
 

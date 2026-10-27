@@ -9,6 +9,7 @@ dependencies = ["fraud-api", "fraud-core", "fraud-training"]
 
 [dependency-groups]
 dev = [
+    "fakeredis[lua]>=2.40.0",
     "httpx2>=2.16.0",
     "pytest>=9.1",
 ]

@@ -68,7 +68,7 @@ def test_legacy_bundles_are_not_served(monkeypatch):
 
 def test_serves_the_highest_version_by_default(client):
     highest = find_bundle(MODELS_DIR, version=None).name
-    assert client.get("/health").json() == {"status": "ok", "model_version": highest}
+    assert client.get("/health").json() == {"status": "ok", "model_version": highest, "card_history_store": "memory"}
 
 
 @pytest.mark.parametrize("version", [V1, V2])
